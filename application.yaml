@@ -4,3 +4,8 @@ ktor:
   application:
     modules:
       - ru.injent.AppKt.configureApp
+gigachat:
+  authkey: ZWI2NWE3ZWItM2M4Mi00YjFhLWJjOTAtODcxNDU2Yzc4MDM5OjlmYTIzYTg2LWZkMjEtNGFmYS05MWY1LTU2ZWIxZjAyYzEzOA==
+  system-instructions-file: system_instructions.txt
+  max-retries: 3
+  model: GigaChat

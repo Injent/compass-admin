@@ -6,25 +6,36 @@ import freemarker.template.TemplateExceptionHandler
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
+import io.ktor.server.config.*
 import io.ktor.server.freemarker.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.cors.routing.*
 import io.ktor.server.plugins.forwardedheaders.*
 import io.ktor.server.resources.*
 import io.ktor.server.sse.*
+import io.ktor.util.logging.*
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.koin.dsl.module
 import org.koin.ktor.ext.get
 import org.koin.ktor.plugin.Koin
-import org.slf4j.LoggerFactory
+import ru.injent.service.config.AppConfig
 import ru.injent.service.google.NewGoogleService
 import ru.injent.service.google.googleModule
 import ru.injent.service.validator.LegendValidator
+import ru.injent.service.validator.validatorModule
 import java.io.File
 
 fun Application.configureApp() {
+    val appConfig = runCatching {
+        environment.config.getAs<AppConfig>()
+    }.getOrElse { e ->
+        log.error("Can't load config. Stopping server...", e)
+        engine.stop()
+        return
+    }
+
     install(SSE)
     install(ContentNegotiation) {
         json()
@@ -58,9 +69,11 @@ fun Application.configureApp() {
     install(Koin) {
         modules(
             module {
-                single { LoggerFactory.getLogger("CompassAdmin") }
+                single<Logger> { environment.log }
+                single { appConfig }
                 single<CoroutineDispatcher> { Dispatchers.IO }
             },
+            validatorModule,
             googleModule
         )
     }

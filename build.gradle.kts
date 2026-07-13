@@ -42,6 +42,8 @@ dependencies {
     implementation(libs.google.drive)
     implementation(libs.google.sheets)
 
+    implementation(libs.gigachat)
+
     testImplementation(kotlin("test"))
     testImplementation(ktorLibs.server.testHost)
 }

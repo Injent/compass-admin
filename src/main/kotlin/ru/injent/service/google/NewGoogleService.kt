@@ -5,13 +5,13 @@ import com.google.api.services.drive.Drive
 import com.google.api.services.drive.model.File
 import com.google.api.services.sheets.v4.Sheets
 import com.google.api.services.sheets.v4.model.*
+import io.ktor.util.logging.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import org.slf4j.Logger
 import ru.injent.dto.FileStatus
 import ru.injent.dto.SheetsFile
 import java.io.IOException
@@ -26,7 +26,7 @@ class NewGoogleService(
     private val drive: Drive,
     private val sheets: Sheets,
     private val logger: Logger,
-    private val ioDispatcher: CoroutineDispatcher
+    private val ioDispatcher: CoroutineDispatcher,
 ) {
 
     private val fileMutexes = mutableMapOf<String, Mutex>()
@@ -180,9 +180,11 @@ class NewGoogleService(
                         .execute()
                 }
                 val updateStatusDeferred = async {
+                    val newStatus = if (accumulatedErrors.isEmpty()) FileStatus.VALID else FileStatus.INVALID
+                    if (files.value.find { it.fileId == fileId }?.status == newStatus) return@async
+                    
                     updateFileContent(fileId) {
-                        appProperties[KEY_STATUS] =
-                            (if (accumulatedErrors.isEmpty()) FileStatus.VALID else FileStatus.INVALID).toString()
+                        appProperties[KEY_STATUS] = newStatus.toString()
                     }
                 }
                 listOf(updateStatusDeferred, updateSheetsDeferred).awaitAll()
