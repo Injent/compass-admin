@@ -120,18 +120,23 @@ private fun SheetValidatorScope.validateDayBlocks(firstScheduleRow: Int) {
     val lastScheduleRow = lastOccupiedRowInScheduleColumns()
     if (lastScheduleRow < firstScheduleRow) return
 
-    var rowIdx = firstScheduleRow
-    while (rowIdx <= lastScheduleRow) {
-        val dayCell = cellAt(rowIdx, DAY_COL_IDX)
-        if (dayCell == null || dayCell.value.isNullOrBlank()) {
-            if (hasTimeCellOnRow(rowIdx)) {
-                cellAt(rowIdx, DAY_COL_IDX)?.test {
-                    error("В столбце A должна начинаться объединенная ячейка с днем недели")
-                }
-            }
-            rowIdx++
-            continue
+    val dayCells = dayCellsBetween(firstScheduleRow, lastScheduleRow)
+    if (dayCells.isEmpty()) {
+        cellAt(firstScheduleRow, DAY_COL_IDX)?.test {
+            error("В столбце A должна начинаться объединенная ячейка с днем недели")
         }
+        return
+    }
+
+    var expectedDayStartRow = firstScheduleRow
+    dayCells.forEach { dayCell ->
+        if (dayCell.rowIdx != expectedDayStartRow) {
+            dayCell.test {
+                error("Ячейки дней недели должны идти бесшовно одна за другой и начинаться сразу после заголовков")
+            }
+        }
+
+        validateInterruptedDayRange(expectedDayStartRow, dayCell.rowIdx - 1, dayCell)
 
         val nextDayRow = nextNonEmptyDayCellRow(dayCell.rowIdx)
         val scanEndRow = ((nextDayRow ?: (lastScheduleRow + 1)) - 1).coerceAtLeast(dayCell.rowIdx)
@@ -154,7 +159,30 @@ private fun SheetValidatorScope.validateDayBlocks(firstScheduleRow: Int) {
 
         validateTimeCellsForDay(dayCell, scanEndRow, expectedDayEndRow)
 
-        rowIdx = maxOf(dayCell.endRowIdx + 1, rowIdx + 1)
+        expectedDayStartRow = dayCell.endRowIdx + 1
+    }
+
+    if (expectedDayStartRow <= lastScheduleRow) {
+        dayCells.last().test {
+            error("После последнего дня недели не должно быть данных вне его объединенной ячейки")
+        }
+    }
+}
+
+private fun SheetValidatorScope.validateInterruptedDayRange(
+    startRowIdx: Int,
+    endRowIdx: Int,
+    errorCell: Cell,
+) {
+    if (startRowIdx > endRowIdx) return
+
+    for (rowIdx in startRowIdx..endRowIdx) {
+        if (hasLegendDataOnRow(rowIdx)) {
+            errorCell.test {
+                error("Данные не должны прерывать последовательность ячеек дней недели")
+            }
+            return
+        }
     }
 }
 
@@ -242,6 +270,17 @@ private fun SheetValidatorScope.nextNonEmptyDayCellRow(currentDayRow: Int): Int?
         .map(Cell::rowIdx)
         .minOrNull()
 
+private fun SheetValidatorScope.dayCellsBetween(startRowIdx: Int, endRowIdx: Int): List<Cell> =
+    rows.asSequence()
+        .flatMap(List<Cell>::asSequence)
+        .filter { cell ->
+            cell.colIdx == DAY_COL_IDX &&
+                cell.rowIdx in startRowIdx..endRowIdx &&
+                !cell.value.isNullOrBlank()
+        }
+        .sortedBy(Cell::rowIdx)
+        .toList()
+
 private fun SheetValidatorScope.timeCellsBetween(startRowIdx: Int, endRowIdx: Int): List<Cell> =
     rows.asSequence()
         .flatMap(List<Cell>::asSequence)
@@ -252,10 +291,10 @@ private fun SheetValidatorScope.timeCellsBetween(startRowIdx: Int, endRowIdx: In
         }
         .toList()
 
-private fun SheetValidatorScope.hasTimeCellOnRow(rowIdx: Int): Boolean =
-    TIME_COL_IDXS.any { colIdx ->
+private fun SheetValidatorScope.hasLegendDataOnRow(rowIdx: Int): Boolean =
+    (DAY_COL_IDX..SECOND_TIME_COL_IDX).any { colIdx ->
         val cell = coveringCell(rowIdx, colIdx)
-        cell != null && cell.colIdx == colIdx && !cell.value.isNullOrBlank()
+        cell != null && (!cell.value.isNullOrBlank() || cell.borders != null)
     }
 
 private fun String?.normalizedText(): String =
