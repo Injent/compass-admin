@@ -1,0 +1,24 @@
+[versions]
+koin = "4.2.2"
+kotlin = "2.4.0"
+logback = "1.5.35"
+googleAuth = "1.39.0"
+googleApiClient = "2.7.2"
+googleDrive = "v3-rev20220815-2.0.0"
+googleSheets = "v4-rev20220927-2.0.0"
+kotlinxDatetime = "0.8.0"
+
+[libraries]
+koin-ktor = { module = "io.insert-koin:koin-ktor", version.ref = "koin" }
+koin-loggerSlf4j = { module = "io.insert-koin:koin-logger-slf4j", version.ref = "koin" }
+logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+google-auth = { module = "com.google.oauth-client:google-oauth-client-jetty", version.ref = "googleAuth" }
+google-apiClient = { module = "com.google.api-client:google-api-client", version.ref = "googleApiClient" }
+google-drive = { module = "com.google.apis:google-api-services-drive", version.ref = "googleDrive" }
+google-sheets = { module = "com.google.apis:google-api-services-sheets", version.ref = "googleSheets" }
+kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime-jvm", version.ref = "kotlinxDatetime" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
