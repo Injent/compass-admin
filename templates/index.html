@@ -51,8 +51,11 @@
             const rail = document.getElementById('nav-rail');
             if (!rail) return;
 
+            const activeRoute = routeForPath(route);
+            if (!activeRoute) return;
+
             rail.querySelectorAll('m3e-nav-item').forEach(item => {
-                if (item.dataset.route === route) {
+                if (item.dataset.route === activeRoute) {
                     item.classList.add('active-nav-item');
                     item.active = true;
                     item.selected = true;
@@ -66,6 +69,17 @@
                     item.removeAttribute('selected');
                 }
             });
+        }
+
+        function routeForPath(path) {
+            if (!path) return null;
+
+            const cleanPath = path.split('?')[0];
+            if (cleanPath === '/' || cleanPath.startsWith('/schedule')) {
+                return '/schedule';
+            }
+
+            return null;
         }
 
         document.addEventListener('click', function (e) {

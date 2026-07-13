@@ -162,7 +162,7 @@ private fun SheetValidatorScope.validateDayBlocks(firstScheduleRow: Int) {
         expectedDayStartRow = dayCell.endRowIdx + 1
     }
 
-    if (expectedDayStartRow <= lastScheduleRow) {
+    if ((expectedDayStartRow..lastScheduleRow).any { rowIdx -> hasLegendValueOnRow(rowIdx) }) {
         dayCells.last().test {
             error("После последнего дня недели не должно быть данных вне его объединенной ячейки")
         }
@@ -295,6 +295,11 @@ private fun SheetValidatorScope.hasLegendDataOnRow(rowIdx: Int): Boolean =
     (DAY_COL_IDX..SECOND_TIME_COL_IDX).any { colIdx ->
         val cell = coveringCell(rowIdx, colIdx)
         cell != null && (!cell.value.isNullOrBlank() || cell.borders != null)
+    }
+
+private fun SheetValidatorScope.hasLegendValueOnRow(rowIdx: Int): Boolean =
+    (DAY_COL_IDX..SECOND_TIME_COL_IDX).any { colIdx ->
+        !coveringCell(rowIdx, colIdx)?.value.isNullOrBlank()
     }
 
 private fun String?.normalizedText(): String =

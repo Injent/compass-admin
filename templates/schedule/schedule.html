@@ -1,0 +1,510 @@
+<div class="schedule-header">
+  <m3e-search-bar id="file-search-bar" clearable>
+    <m3e-icon name="search" slot="leading"></m3e-icon>
+    <input id="search-input" slot="input" placeholder="Поиск файлов..." />
+  </m3e-search-bar>
+
+  <div class="actions-wrapper">
+    <m3e-split-button>
+      <m3e-button slot="leading-button" id="upload-btn" data-mode="upload">
+        <m3e-icon slot="icon" id="schedule-main-action-icon" name="upload"></m3e-icon>
+        Загрузить
+      </m3e-button>
+      <m3e-icon-button slot="trailing-button">
+        <m3e-icon name="keyboard_arrow_down"></m3e-icon>
+        <m3e-menu-trigger for="menu"></m3e-menu-trigger>
+      </m3e-icon-button>
+    </m3e-split-button>
+
+    <m3e-menu id="menu" position-x="before">
+      <m3e-menu-item>Скачать все</m3e-menu-item>
+      <m3e-menu-item>Удалить</m3e-menu-item>
+    </m3e-menu>
+  </div>
+</div>
+
+<input type="file" id="file-input" name="files" accept=".xlsx,.xls" multiple style="display: none;"
+       hx-post="/schedule/upload"
+       hx-trigger="change"
+       hx-target="#schedule-list"
+       hx-swap="outerHTML"
+       hx-encoding="multipart/form-data">
+
+<form id="schedule-delete-form"
+      hx-post="/schedule/delete"
+      hx-target="#schedule-list"
+      hx-swap="outerHTML"
+      style="display: none;"></form>
+
+<m3e-split-pane id="schedule-split-pane" class="schedule-workspace" value="100" min="45" max="100">
+  <m3e-content-pane class="schedule-pane" slot="start">
+    <div id="schedule-list-container" hx-ext="sse" sse-connect="/schedule/list/sse">
+      <m3e-filter-chip-set id="status-filter-chips" aria-label="Фильтр по статусу" style="margin-bottom: 16px;">
+        <m3e-filter-chip id="chip-all" selected data-filter="all">Все</m3e-filter-chip>
+        <m3e-filter-chip id="chip-ready" data-filter="valid">Проверенные</m3e-filter-chip>
+        <m3e-filter-chip id="chip-error" data-filter="invalid">С ошибками</m3e-filter-chip>
+        <m3e-filter-chip id="chip-deleted" data-filter="deleted">Удаленные</m3e-filter-chip>
+      </m3e-filter-chip-set>
+      <#include "/schedule/schedule_list.html">
+    </div>
+  </m3e-content-pane>
+  <div id="correction-pane-container" slot="end" hidden></div>
+</m3e-split-pane>
+
+<script>
+  (function() {
+    let deleteMode = false;
+    let selectedIdsBeforeSwap = [];
+    document.querySelector('#menu m3e-menu-item:last-child')?.setAttribute('id', 'delete-mode-menu-item');
+
+    const getPrimaryButton = () => document.getElementById('upload-btn');
+    const getPrimaryIcon = () => document.getElementById('schedule-main-action-icon');
+    const getScheduleActionList = () => document.querySelector('#schedule-list > .schedule-file-action-list');
+    const getScheduleSelectionList = () => document.querySelector('#schedule-list > .schedule-file-selection-list');
+    const getScheduleLists = () => Array.from(document.querySelectorAll('#schedule-list > .schedule-file-action-list, #schedule-list > .schedule-file-selection-list'));
+    const getSelectedFilter = () => {
+      const selectedChip = document.querySelector('#status-filter-chips m3e-filter-chip[selected]');
+      return selectedChip ? selectedChip.getAttribute('data-filter') : 'all';
+    };
+    const isDeletedFilterSelected = () => getSelectedFilter() === 'deleted';
+
+    const setPrimaryButtonLabel = (label) => {
+      const button = getPrimaryButton();
+      if (!button) return;
+
+      Array.from(button.childNodes)
+        .filter(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim())
+        .forEach(node => {
+          const counter = deleteMode ? ' ' + getSelectedFileIds().length + '/' + getSelectableFileCount() : '';
+          node.textContent = ' ' + label + counter;
+        });
+    };
+
+    const getSelectedFileIds = () => {
+      const list = getScheduleSelectionList();
+      if (!list) return [];
+
+      return Array.from(list.querySelectorAll('m3e-list-option[data-id]'))
+        .filter(option => option.style.display !== 'none')
+        .filter(option => option.selected || option.hasAttribute('selected') || option.getAttribute('aria-selected') === 'true')
+        .map(option => option.getAttribute('data-id'))
+        .filter(Boolean)
+        .filter((fileId, index, fileIds) => fileIds.indexOf(fileId) === index);
+    };
+
+    const getSelectableFileCount = () => {
+      const list = getScheduleSelectionList();
+      if (!list) return 0;
+
+      return Array.from(list.querySelectorAll('m3e-list-option[data-id]'))
+        .filter(option => option.style.display !== 'none')
+        .length;
+    };
+
+    const updateDeleteMenuAvailability = () => {
+      const deleteMenuItem = document.getElementById('delete-mode-menu-item');
+      if (!deleteMenuItem) return;
+
+      if (isDeletedFilterSelected()) {
+        deleteMenuItem.disabled = true;
+        deleteMenuItem.setAttribute('disabled', '');
+      } else {
+        deleteMenuItem.disabled = false;
+        deleteMenuItem.removeAttribute('disabled');
+      }
+    };
+
+    const setScheduleSelectionMode = (enabled) => {
+      const actionList = getScheduleActionList();
+      const selectionList = getScheduleSelectionList();
+
+      if (actionList) {
+        actionList.hidden = enabled;
+      }
+      if (selectionList) {
+        selectionList.hidden = !enabled;
+      }
+    };
+
+    const clearScheduleSelection = () => {
+      const list = getScheduleSelectionList();
+      if (!list) return;
+
+      list.querySelectorAll('m3e-list-option').forEach(option => {
+        option.selected = false;
+        option.removeAttribute('selected');
+        option.removeAttribute('aria-selected');
+      });
+    };
+
+    const restoreScheduleSelection = (fileIds) => {
+      const list = getScheduleSelectionList();
+      if (!list || fileIds.length === 0) return;
+
+      const selectedIds = new Set(fileIds);
+      list.querySelectorAll('m3e-list-option[data-id]').forEach(option => {
+        const selected = selectedIds.has(option.getAttribute('data-id'));
+        option.selected = selected;
+        if (selected) {
+          option.setAttribute('selected', '');
+        } else {
+          option.removeAttribute('selected');
+          option.removeAttribute('aria-selected');
+        }
+      });
+    };
+
+    const updatePrimaryAction = () => {
+      const button = getPrimaryButton();
+      const icon = getPrimaryIcon();
+      if (!button || !icon) return;
+      setScheduleSelectionMode(deleteMode);
+
+      if (!deleteMode) {
+        button.dataset.mode = 'upload';
+        icon.setAttribute('name', 'upload');
+        setPrimaryButtonLabel('Загрузить');
+        return;
+      }
+
+      const selectedCount = getSelectedFileIds().length;
+      if (selectedCount > 0) {
+        button.dataset.mode = 'delete';
+        icon.setAttribute('name', 'delete');
+        setPrimaryButtonLabel('Удалить');
+      } else {
+        button.dataset.mode = 'cancel-delete';
+        icon.setAttribute('name', 'close');
+        setPrimaryButtonLabel('Отмена');
+      }
+    };
+
+    const enterDeleteMode = () => {
+      if (isDeletedFilterSelected()) return;
+
+      deleteMode = true;
+      updatePrimaryAction();
+    };
+
+    const exitDeleteMode = () => {
+      deleteMode = false;
+      selectedIdsBeforeSwap = [];
+      clearScheduleSelection();
+      updatePrimaryAction();
+    };
+
+    const submitSelectedFilesForDeletion = () => {
+      const fileIds = getSelectedFileIds();
+      if (fileIds.length === 0) {
+        updatePrimaryAction();
+        return;
+      }
+
+      const form = document.getElementById('schedule-delete-form');
+      if (!form) return;
+
+      form.innerHTML = '';
+      fileIds.forEach(fileId => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'fileId';
+        input.value = fileId;
+        form.appendChild(input);
+      });
+
+      if (form.requestSubmit) {
+        form.requestSubmit();
+      } else {
+        form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      }
+    };
+
+    document.addEventListener('click', function(e) {
+      if (e.target.closest('.correction-open-button')) {
+        e.correctionButtonClick = true;
+      }
+    }, true);
+
+    document.addEventListener('click', function(e) {
+      const uploadBtn = e.target.closest('#upload-btn');
+      if (uploadBtn) {
+        if (uploadBtn.dataset.mode === 'delete') {
+          submitSelectedFilesForDeletion();
+        } else if (uploadBtn.dataset.mode === 'cancel-delete') {
+          exitDeleteMode();
+        } else {
+          document.getElementById('file-input').click();
+        }
+        return;
+      }
+
+      const deleteMenuItem = e.target.closest('#delete-mode-menu-item') || e.target.closest('m3e-menu-item:last-child');
+      if (deleteMenuItem && deleteMenuItem.closest('#menu')) {
+        enterDeleteMode();
+      }
+    });
+
+    document.addEventListener('click', function(e) {
+      if (e.correctionButtonClick || e.target.closest('.correction-open-button') || e.target.closest('.restore-file-button')) {
+        return;
+      }
+
+      const listOption = e.target.closest('m3e-list-option');
+      if (listOption) {
+        if (deleteMode) {
+          window.setTimeout(updatePrimaryAction, 0);
+        }
+        return;
+      }
+
+      const listAction = e.target.closest('m3e-list-action');
+      if (listAction && !listAction.dataset.heading) {
+        const fileId = listAction.getAttribute('data-id');
+        if (fileId) {
+          clearScheduleSelection();
+          window.setTimeout(clearScheduleSelection, 0);
+          window.open('/schedule/editor/' + fileId, '_blank');
+        }
+      }
+    });
+
+    const filterFiles = () => {
+      const searchInput = document.getElementById('search-input');
+      if (!searchInput) return;
+
+      const query = searchInput.value.toLowerCase().trim();
+      const selectedFilter = getSelectedFilter();
+
+      getScheduleLists().forEach(container => {
+        const children = Array.from(container.children);
+
+        children.forEach(child => {
+          const tag = child.tagName.toLowerCase();
+
+          if (tag === 'm3e-divider') {
+            child.style.display = 'none';
+          }
+        });
+
+        children.forEach(child => {
+          const tag = child.tagName.toLowerCase();
+          if (tag !== 'm3e-list-action' && tag !== 'm3e-list-option') return;
+
+          if (child.dataset.heading === 'true') {
+            child.style.display = '';
+            return;
+          }
+
+          const text = child.textContent.toLowerCase();
+          const status = child.getAttribute('data-status') || '';
+
+          const matchesSearch = text.includes(query);
+          const matchesFilter = (
+            (selectedFilter === 'all' && status !== 'EMPTY') ||
+            (selectedFilter === 'valid' && status === 'VALID') ||
+            (selectedFilter === 'invalid' && status === 'INVALID') ||
+            (selectedFilter === 'deleted' && status === 'EMPTY')
+          );
+
+          if (matchesSearch && matchesFilter) {
+            child.style.display = '';
+            let sibling = child.previousElementSibling;
+            while (sibling && sibling.tagName.toLowerCase() === 'm3e-divider') {
+              sibling.style.display = '';
+              sibling = sibling.previousElementSibling;
+            }
+          } else {
+            child.style.display = 'none';
+          }
+        });
+      });
+      updateDeleteMenuAvailability();
+      updatePrimaryAction();
+    };
+
+    document.addEventListener('change', function(e) {
+      if (e.target.closest && e.target.closest('m3e-selection-list')) {
+        updatePrimaryAction();
+      }
+    });
+
+    document.addEventListener('input', function(e) {
+      if (e.target.closest && e.target.closest('m3e-selection-list')) {
+        updatePrimaryAction();
+      }
+    });
+
+    document.addEventListener('input', function(e) {
+      if (e.target.id === 'search-input') {
+        filterFiles();
+      }
+    });
+
+    document.addEventListener('clear', function(e) {
+      const searchBar = e.target.closest('#file-search-bar');
+      if (searchBar) {
+        const searchInput = document.getElementById('search-input');
+        if (searchInput) searchInput.value = '';
+        filterFiles();
+      }
+    });
+
+    document.addEventListener('click', function(e) {
+      const chip = e.target.closest('m3e-filter-chip');
+      if (chip) {
+        const chipSet = chip.closest('#status-filter-chips');
+        if (chipSet) {
+          const chips = chipSet.querySelectorAll('m3e-filter-chip');
+          chips.forEach(c => {
+            if (c === chip) {
+              c.setAttribute('selected', '');
+            } else {
+              c.removeAttribute('selected');
+            }
+          });
+          if (chip.getAttribute('data-filter') === 'deleted') {
+            exitDeleteMode();
+          }
+          filterFiles();
+        }
+      }
+    });
+
+    let processingInterval = null;
+    const processingShapesList = ["9-sided-cookie", "6-sided-cookie", "4-sided-cookie", "pill", "circle"];
+    let processingShapeIndex = 0;
+
+    const startProcessingAnimation = () => {
+      if (processingInterval) {
+        clearInterval(processingInterval);
+      }
+
+      processingInterval = setInterval(() => {
+        const shapes = document.querySelectorAll('.processing-shape');
+        if (shapes.length === 0) {
+          clearInterval(processingInterval);
+          processingInterval = null;
+          return;
+        }
+
+        processingShapeIndex = (processingShapeIndex + 1) % processingShapesList.length;
+        const nextShapeName = processingShapesList[processingShapeIndex];
+
+        shapes.forEach(shape => {
+          shape.setAttribute('name', nextShapeName);
+        });
+      }, 700);
+    };
+
+    filterFiles();
+    startProcessingAnimation();
+
+    document.addEventListener('htmx:afterSwap', function(e) {
+      if (e.detail.target.id === 'schedule-list-container' || e.detail.target.id === 'schedule-list') {
+        filterFiles();
+        startProcessingAnimation();
+        const requestElement = e.detail.requestConfig && e.detail.requestConfig.elt;
+        if (requestElement && requestElement.id === 'schedule-delete-form') {
+          exitDeleteMode();
+        } else if (deleteMode) {
+          restoreScheduleSelection(selectedIdsBeforeSwap);
+          updatePrimaryAction();
+        }
+      }
+    });
+
+    document.addEventListener('htmx:beforeSwap', function(e) {
+      if (e.detail.target.id !== 'schedule-list' || !deleteMode) return;
+
+      const requestElement = e.detail.requestConfig && e.detail.requestConfig.elt;
+      if (requestElement && requestElement.id === 'schedule-delete-form') return;
+
+      selectedIdsBeforeSwap = getSelectedFileIds();
+    });
+
+    document.addEventListener('htmx:beforeRequest', function(e) {
+      const applyForm = e.target.closest && e.target.closest('#correction-apply-form');
+      if (applyForm) {
+        const applyButton = applyForm.querySelector('.apply-corrections-button');
+        if (applyButton) {
+          applyButton.setAttribute('disabled', '');
+        }
+        return;
+      }
+
+      if (e.target.id === 'schedule-delete-form') {
+        const primaryButton = getPrimaryButton();
+        if (primaryButton) {
+          primaryButton.disabled = true;
+          primaryButton.setAttribute('disabled', '');
+        }
+        return;
+      }
+
+      const restoreButton = e.target.closest && e.target.closest('.restore-file-button');
+      if (restoreButton) {
+        restoreButton.disabled = true;
+        restoreButton.setAttribute('disabled', '');
+        return;
+      }
+
+      const button = e.target.closest && e.target.closest('.suggest-corrections-button');
+      if (!button) return;
+
+      const emptyState = button.closest('.correction-empty-state');
+      if (emptyState) {
+        emptyState.innerHTML = '<m3e-circular-progress-indicator variant="wavy" indeterminate></m3e-circular-progress-indicator>';
+      }
+    });
+
+    document.addEventListener('click', function(e) {
+      const closeButton = e.target.closest('.correction-pane-close');
+      if (closeButton) {
+        const splitPane = document.getElementById('schedule-split-pane');
+        const correctionContainer = document.getElementById('correction-pane-container');
+        correctionContainer.innerHTML = '';
+        correctionContainer.hidden = true;
+        splitPane.classList.remove('has-correction-pane');
+        splitPane.value = 100;
+        splitPane.setAttribute('value', '100');
+      }
+
+      const acceptButton = e.target.closest('.accept-correction-button');
+      if (acceptButton) {
+        const item = acceptButton.closest('.correction-item');
+        if (!item) return;
+
+        item.dataset.accepted = 'true';
+        item.querySelectorAll('input').forEach(input => input.disabled = false);
+        acceptButton.remove();
+      }
+    });
+
+    document.addEventListener('htmx:afterSwap', function(e) {
+      if (e.detail.target.id === 'correction-pane-container') {
+        const splitPane = document.getElementById('schedule-split-pane');
+        e.detail.target.hidden = false;
+        splitPane.classList.add('has-correction-pane');
+        splitPane.value = 68;
+        splitPane.setAttribute('value', '68');
+      }
+    });
+
+    document.addEventListener('htmx:afterRequest', function(e) {
+      if (e.target.id === 'schedule-delete-form') {
+        const primaryButton = getPrimaryButton();
+        if (primaryButton) {
+          primaryButton.disabled = false;
+          primaryButton.removeAttribute('disabled');
+        }
+      }
+
+      const restoreButton = e.target.closest && e.target.closest('.restore-file-button');
+      if (restoreButton) {
+        restoreButton.disabled = false;
+        restoreButton.removeAttribute('disabled');
+      }
+    });
+
+  })();
+</script>

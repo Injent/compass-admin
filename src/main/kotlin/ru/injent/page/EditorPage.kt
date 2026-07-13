@@ -16,7 +16,7 @@ fun Routing.editorPage(googleService: NewGoogleService) {
         val file = googleService.files.value.find { it.fileId == fileId }
             ?: return@get call.respond(HttpStatusCode.NotFound, "File not found")
 
-        call.respond(FreeMarkerContent("schedule/editor.ftl", fileModel(file)))
+        call.respond(FreeMarkerContent("schedule/editor.html", fileModel(file)))
     }
 
     sse("/schedule/status/sse/{fileId}") {
@@ -29,7 +29,7 @@ fun Routing.editorPage(googleService: NewGoogleService) {
             }
             .collectLatest { file ->
                 send(
-                    data = renderTemplate("schedule/status_snackbar.ftl", fileModel(file)),
+                    data = renderTemplate("schedule/status_snackbar.html", fileModel(file)),
                     event = "StatusUpdate"
                 )
             }

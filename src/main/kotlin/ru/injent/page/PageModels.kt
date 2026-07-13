@@ -6,6 +6,7 @@ import kotlinx.datetime.*
 import org.koin.ktor.ext.get
 import ru.injent.dto.FileStatus
 import ru.injent.dto.SheetsFile
+import ru.injent.service.google.CellCorrectionSuggestion
 import java.io.StringWriter
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -18,6 +19,7 @@ data class FileView(
     val modifiedTime: String,
     val createdTime: String,
     val icon: String,
+    val canFixWithAi: Boolean,
 )
 
 fun scheduleModel(files: List<SheetsFile>, error: String? = null): Map<String, Any?> =
@@ -28,6 +30,29 @@ fun scheduleModel(files: List<SheetsFile>, error: String? = null): Map<String, A
 
 fun fileModel(file: SheetsFile): Map<String, Any> =
     mapOf("file" to file.toView())
+
+fun correctionPaneModel(fileId: String): Map<String, Any?> =
+    mapOf("fileId" to fileId)
+
+fun correctionResultsModel(
+    fileId: String,
+    suggestions: List<CellCorrectionSuggestion>,
+    error: String? = null,
+): Map<String, Any?> =
+    mapOf(
+        "fileId" to fileId,
+        "suggestions" to suggestions,
+        "error" to error
+    )
+
+fun correctionApplyResultModel(
+    appliedCount: Int,
+    error: String? = null,
+): Map<String, Any?> =
+    mapOf(
+        "appliedCount" to appliedCount,
+        "error" to error
+    )
 
 context(routing: Routing)
 fun renderTemplate(templateName: String, model: Map<String, Any?>): String {
@@ -45,6 +70,7 @@ private fun SheetsFile.toView(): FileView =
         modifiedTime = modifiedTime.formatScheduleDate(),
         createdTime = uploadTime.formatScheduleDate(),
         icon = status.toIcon(),
+        canFixWithAi = canFixWithAi,
     )
 
 private fun FileStatus.toText(): String =

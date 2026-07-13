@@ -14,6 +14,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.injent.dto.FileStatus
 import ru.injent.dto.SheetsFile
+import ru.injent.service.validator.LegendValidator
+import ru.injent.service.validator.LessonValidator
+import ru.injent.service.wordcorrection.WordCorrectionService
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -130,6 +133,11 @@ class NewGoogleService(
         Unit
     }
 
+    suspend fun restore(fileId: String) {
+        val sheetValidators = listOf(LegendValidator, LessonValidator)
+        test(fileId, sheetValidators)
+    }
+
     /**
      * Проверяет валидность таблицы по правилам валидаторов
      * Если вызвать повторно когда старая операция еще не закончилась, то она прервется и начнется новая
@@ -149,9 +157,14 @@ class NewGoogleService(
                 val sheet = getSheet(fileId).getOrThrow()
 
                 val scope = SheetValidatorScope(sheet)
+                var canFixWithAi = false
                 validators.forEach { validator ->
+                    val errorsBefore = scope.getAccumulatedErrors().size
                     with(validator) {
                         scope.validate()
+                    }
+                    if (validator === LessonValidator && scope.getAccumulatedErrors().size > errorsBefore) {
+                        canFixWithAi = true
                     }
                 }
                 val accumulatedErrors = scope.getAccumulatedErrors().map { cellError ->
@@ -181,10 +194,12 @@ class NewGoogleService(
                 }
                 val updateStatusDeferred = async {
                     val newStatus = if (accumulatedErrors.isEmpty()) FileStatus.VALID else FileStatus.INVALID
-                    if (files.value.find { it.fileId == fileId }?.status == newStatus) return@async
+                    val currentFile = files.value.find { it.fileId == fileId }
+                    if (currentFile?.status == newStatus && currentFile.canFixWithAi == canFixWithAi) return@async
 
                     updateFileContent(fileId) {
                         appProperties[KEY_STATUS] = newStatus.toString()
+                        appProperties[KEY_CAN_FIX_WITH_AI] = canFixWithAi.toString()
                     }
                 }
                 listOf(updateStatusDeferred, updateSheetsDeferred).awaitAll()
@@ -197,6 +212,81 @@ class NewGoogleService(
                 }
             }
         }
+    }
+
+    suspend fun suggestLessonCorrections(
+        fileId: String,
+        wordCorrectionService: WordCorrectionService,
+    ): Result<List<CellCorrectionSuggestion>> = runResulting("suggest lesson corrections '$fileId'") {
+        val sheet = getSheet(fileId).getOrThrow()
+        val scope = SheetValidatorScope(sheet)
+
+        with(LessonValidator) {
+            scope.validate()
+        }
+
+        val cellsByPosition = scope.rows
+            .flatten()
+            .associateBy { it.rowIdx to it.colIdx }
+        val invalidCells = scope.getAccumulatedErrors()
+            .distinctBy { it.rowIdx to it.colIdx }
+            .mapNotNull { error ->
+                cellsByPosition[error.rowIdx to error.colIdx]
+                    ?.takeIf { cell -> !cell.value.isNullOrBlank() }
+            }
+
+        val indexedCellGroups = invalidCells
+            .groupBy { cell -> cell.value.orEmpty() }
+            .values
+            .mapIndexed { index, cells -> index + 1 to cells }
+            .toMap()
+        val corrections = wordCorrectionService.correctWords(
+            indexedCellGroups.mapValues { (_, cells) -> cells.first().value.orEmpty() }
+        )
+
+        corrections.mapNotNull { (key, correctedValue) ->
+            val cells = indexedCellGroups[key].orEmpty().takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            val cell = cells.first()
+            CellCorrectionSuggestion(
+                key = key,
+                rowIdx = cell.rowIdx,
+                colIdx = cell.colIdx,
+                oldValue = cell.value.orEmpty(),
+                newValue = correctedValue,
+                replacements = cells.map { invalidCell ->
+                    CellReplacement(
+                        rowIdx = invalidCell.rowIdx,
+                        colIdx = invalidCell.colIdx,
+                        value = correctedValue
+                    )
+                }
+            )
+        }
+    }
+
+    suspend fun applyLessonCorrections(
+        fileId: String,
+        replacements: Collection<CellReplacement>,
+    ): Result<Unit> = runResulting("apply lesson corrections '$fileId'") {
+        if (replacements.isEmpty()) return@runResulting
+
+        val sheet = getSheet(fileId).getOrThrow()
+        sheets.spreadsheets()
+            .batchUpdate(
+                fileId,
+                BatchUpdateSpreadsheetRequest()
+                    .setRequests(
+                        replacements.map { replacement ->
+                            CellValueRequest(
+                                sheetId = sheet.properties.sheetId,
+                                colIdx = replacement.colIdx,
+                                rowIdx = replacement.rowIdx,
+                                value = replacement.value
+                            )
+                        }
+                    )
+            )
+            .execute()
     }
 
     private suspend fun getSheet(fileId: String) = runResulting("get sheet '$fileId'") {
@@ -254,6 +344,9 @@ class NewGoogleService(
                     status = contentScope.appProperties[KEY_STATUS]
                         ?.let { runCatching { FileStatus.valueOf(it) }.getOrNull() }
                         ?: file.status,
+                    canFixWithAi = contentScope.appProperties[KEY_CAN_FIX_WITH_AI]
+                        ?.toBooleanStrictOrNull()
+                        ?: file.canFixWithAi,
                 )
             }
         }
@@ -345,6 +438,21 @@ class NewGoogleService(
     }
 }
 
+data class CellCorrectionSuggestion(
+    val key: Int,
+    val rowIdx: Int,
+    val colIdx: Int,
+    val oldValue: String,
+    val newValue: String,
+    val replacements: List<CellReplacement>,
+)
+
+data class CellReplacement(
+    val rowIdx: Int,
+    val colIdx: Int,
+    val value: String,
+)
+
 private typealias GoogleFile = File
 
 private const val XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -353,9 +461,13 @@ private const val DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder"
 private const val SPREADSHEET_MIME = "application/vnd.google-apps.spreadsheet"
 private const val KEY_STATUS = "status"
 private const val KEY_UPLOAD_TIME = "uploadTime"
+private const val KEY_CAN_FIX_WITH_AI = "canFixWithAi"
 
 private val GoogleFile.status: FileStatus
     get() = runCatching { appProperties?.get(KEY_STATUS)?.let(FileStatus::valueOf) }.getOrNull() ?: FileStatus.EMPTY
+
+private val GoogleFile.canFixWithAi: Boolean
+    get() = appProperties?.get(KEY_CAN_FIX_WITH_AI)?.toBooleanStrictOrNull() ?: false
 
 private val GoogleFile.modifiedAtTime: Instant
     get() = modifiedTime?.value?.let(Instant::fromEpochMilliseconds) ?: Clock.System.now()
@@ -372,6 +484,32 @@ private fun GoogleFile.toSheetsFile() = SheetsFile(
     modifiedTime = modifiedAtTime,
     uploadTime = uploadTime,
     status = status,
+    canFixWithAi = canFixWithAi,
+)
+
+@Suppress("FunctionName")
+private fun CellValueRequest(
+    sheetId: Int,
+    colIdx: Int,
+    rowIdx: Int,
+    value: String,
+) = Request().setRepeatCell(
+    RepeatCellRequest()
+        .setCell(
+            CellData()
+                .setUserEnteredValue(
+                    ExtendedValue().setStringValue(value)
+                )
+        )
+        .setRange(
+            GridRange()
+                .setSheetId(sheetId)
+                .setStartRowIndex(rowIdx)
+                .setEndRowIndex(rowIdx + 1)
+                .setStartColumnIndex(colIdx)
+                .setEndColumnIndex(colIdx + 1)
+        )
+        .setFields("userEnteredValue")
 )
 
 @Suppress("FunctionName")

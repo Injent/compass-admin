@@ -1,0 +1,37 @@
+<#if error??>
+  <div class="correction-message correction-message-error">
+    <m3e-icon name="error" variant="rounded"></m3e-icon>
+    <span>${error?html}</span>
+  </div>
+<#elseif suggestions?has_content>
+  <form id="correction-apply-form"
+        class="correction-form"
+        hx-post="/schedule/corrections/${fileId?html}/apply"
+        hx-target="#correction-pane-body"
+        hx-swap="innerHTML">
+    <m3e-list class="correction-list">
+      <#list suggestions as suggestion>
+        <m3e-list-item class="correction-item" data-accepted="false">
+          ${suggestion.newValue?html}
+          <span class="correction-old" slot="overline">${suggestion.oldValue?html}</span>
+          <#list suggestion.replacements as replacement>
+            <input type="hidden" name="rowIdx" value="${replacement.rowIdx}" disabled>
+            <input type="hidden" name="colIdx" value="${replacement.colIdx}" disabled>
+            <input type="hidden" name="value" value="${replacement.value?html}" disabled>
+          </#list>
+          <m3e-icon-button class="accept-correction-button" type="button" slot="trailing">
+            <m3e-icon name="check" variant="rounded" style="color: #2dc052;"></m3e-icon>
+          </m3e-icon-button>
+        </m3e-list-item>
+      </#list>
+    </m3e-list>
+    <div class="correction-footer">
+      <m3e-button class="apply-corrections-button" variant="filled" type="submit">Применить изменения</m3e-button>
+    </div>
+  </form>
+<#else>
+  <div class="correction-empty-state">
+    <m3e-list class="correction-list"></m3e-list>
+    <m3e-heading variant="body" size="medium">Нет предложений</m3e-heading>
+  </div>
+</#if>

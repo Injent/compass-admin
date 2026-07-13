@@ -1,0 +1,20 @@
+<m3e-content-pane class="correction-pane">
+  <div class="correction-pane-header">
+    <m3e-heading variant="title" size="medium">Исправления</m3e-heading>
+    <m3e-icon-button class="correction-pane-close">
+      <m3e-icon name="close" variant="rounded"></m3e-icon>
+    </m3e-icon-button>
+  </div>
+  <div id="correction-pane-body" class="correction-pane-body">
+    <m3e-list class="correction-list"></m3e-list>
+    <div class="correction-empty-state">
+      <m3e-button class="suggest-corrections-button"
+                  variant="filled"
+                  hx-post="/schedule/corrections/${fileId?html}/suggest"
+                  hx-target="#correction-pane-body"
+                  hx-swap="innerHTML">
+        Предложить исправления
+      </m3e-button>
+    </div>
+  </div>
+</m3e-content-pane>

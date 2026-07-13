@@ -116,6 +116,7 @@ m3e-nav-rail {
 m3e-content-pane,
 .schedule-pane {
     width: 100%;
+    height: 100%;
     flex: 1;
     /* Stretch to fill the remaining vertical height */
     box-sizing: border-box;
@@ -125,7 +126,7 @@ m3e-content-pane,
 
     /* CSS Custom Property for border shape */
     --m3e-content-pane-container-shape: 24px 0px 0px 0px;
-    --m3e-content-pane-container-color: var(--md-sys-color-surface);
+    --m3e-content-pane-container-color: var(--md-sys-color-surface-container-lowest);
     --m3e-content-pane-container-padding: 0px;
 }
 
@@ -141,6 +142,183 @@ m3e-content-pane,
 #schedule-list-container {
     padding: 16px;
     box-sizing: border-box;
+}
+
+#schedule-list > m3e-action-list[hidden],
+#schedule-list > m3e-selection-list[hidden] {
+    display: none;
+}
+
+.schedule-workspace {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    gap: 0;
+}
+
+.schedule-workspace.has-correction-pane {
+    gap: 8px;
+    column-gap: 8px;
+}
+
+.schedule-workspace.has-correction-pane .schedule-pane {
+    --m3e-content-pane-container-shape: 24px 24px 0px 0px;
+}
+
+#correction-pane-container {
+    height: 100%;
+    min-height: 0;
+}
+
+.correction-pane {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    height: 100%;
+    overflow: hidden;
+    animation: correction-pane-slide-in 180ms ease-out;
+    --m3e-content-pane-container-shape: 24px 0px 0px 0px;
+    --m3e-content-pane-container-color: var(--md-sys-color-surface-container-lowest);
+    --m3e-content-pane-container-padding: 0px;
+}
+
+.correction-pane-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 12px 8px 24px;
+    box-sizing: border-box;
+}
+
+.correction-pane-body {
+    display: flex;
+    flex-direction: column;
+    height: calc(100% - 60px);
+    min-height: 0;
+    min-width: 0;
+    max-width: 100%;
+    padding: 8px 16px 16px 24px;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.correction-empty-state {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    min-height: 220px;
+}
+
+.correction-form {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    max-width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+.correction-list {
+    display: block;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    max-width: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.correction-item {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.correction-old,
+.correction-new {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
+    box-sizing: border-box;
+    line-height: 1.35;
+}
+
+.correction-old {
+    color: var(--md-sys-color-on-surface-variant);
+    text-decoration: line-through;
+}
+
+.correction-new {
+    color: var(--md-sys-color-on-surface);
+    font-weight: 500;
+}
+
+.correction-item[data-accepted="true"] .correction-new {
+    color: #2dc052;
+}
+
+.correction-footer {
+    display: flex;
+    flex-shrink: 0;
+    justify-content: flex-end;
+    min-width: 0;
+    max-width: 100%;
+    padding-top: 12px;
+}
+
+.apply-corrections-button {
+    max-width: 100%;
+}
+
+.correction-message {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 220px;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.correction-message-error {
+    color: var(--md-sys-color-error);
+}
+
+.correction-open-button {
+    flex-shrink: 0;
+}
+
+.correction-open-icon {
+    display: block;
+    width: 22px;
+    height: 22px;
+}
+
+.correction-trailing-placeholder {
+    display: block;
+    width: 40px;
+    height: 40px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+@keyframes correction-pane-slide-in {
+    from {
+        opacity: 0;
+        transform: translateX(24px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
 }
 
 .schedule-table-row {
@@ -184,6 +362,10 @@ m3e-content-pane,
 }
 
 @media (max-width: 760px) {
+    .schedule-workspace {
+        position: relative;
+    }
+
     .schedule-table-heading-action {
         display: none;
     }

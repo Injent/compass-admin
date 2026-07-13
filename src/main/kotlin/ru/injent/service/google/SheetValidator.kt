@@ -118,7 +118,7 @@ data class Cell(
     val value: String?
         get() = cellRef.userEnteredValue?.let {
             it.stringValue ?: it.numberValue?.toString() ?: it.boolValue?.toString()
-        }
+        }?.normalizeCellValue()
 
     val isRedText: Boolean
         get() = (cellRef.userEnteredFormat?.textFormat?.foregroundColor?.red ?: 0f) >= 0.9f
@@ -159,3 +159,13 @@ data class Cell(
         return "Cell($rowIdx:$colIdx${if (isMerged) "$endRowIdx:$endColIdx" else ""} '$value')"
     }
 }
+
+private fun String.normalizeCellValue(): String =
+    replace(LINE_BREAKS_REGEX, " ")
+        .replace(INVISIBLE_CHARS_REGEX, "")
+        .replace(SPACES_REGEX, " ")
+        .trim()
+
+private val LINE_BREAKS_REGEX = Regex("[\\r\\n\\t]+")
+private val INVISIBLE_CHARS_REGEX = Regex("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F\\u00AD\\u034F\\u061C\\u115F\\u1160\\u17B4\\u17B5\\u180E\\u200B-\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2060-\\u206F\\uFEFF]")
+private val SPACES_REGEX = Regex("[\\s\\u00A0]{2,}")

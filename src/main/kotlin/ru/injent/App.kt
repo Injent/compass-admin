@@ -28,6 +28,8 @@ import ru.injent.service.google.googleModule
 import ru.injent.service.validator.LegendValidator
 import ru.injent.service.validator.LessonValidator
 import ru.injent.service.validator.validatorModule
+import ru.injent.service.wordcorrection.WordCorrectionService
+import ru.injent.service.wordcorrection.wordCorrectionModule
 import java.io.File
 
 fun Application.configureApp() {
@@ -77,7 +79,8 @@ fun Application.configureApp() {
                 }
             },
             validatorModule,
-            googleModule
+            googleModule,
+            wordCorrectionModule
         )
     }
     install(FreeMarker) {
@@ -85,6 +88,7 @@ fun Application.configureApp() {
     }
 
     val googleService = get<NewGoogleService>()
+    val wordCorrectionService = get<WordCorrectionService>()
     val sheetValidators = listOf(LegendValidator, LessonValidator)
 
     runBlocking {
@@ -94,7 +98,7 @@ fun Application.configureApp() {
     routing {
         staticAssets()
         indexPage()
-        schedulePage(googleService)
+        schedulePage(googleService, wordCorrectionService, sheetValidators)
         editorPage(googleService)
         googleSheetsCallbackPage(googleService, sheetValidators, this@configureApp)
     }

@@ -8,7 +8,7 @@ import java.io.File
 
 fun Routing.indexPage() {
     get("/") {
-        call.respond(FreeMarkerContent("index.ftl", emptyMap<String, Any>()))
+        call.respond(FreeMarkerContent("index.html", emptyMap<String, Any>()))
     }
 }
 

@@ -10,4 +10,5 @@ data class SheetsFile(
     val modifiedTime: Instant,
     val uploadTime: Instant,
     val status: FileStatus,
+    val canFixWithAi: Boolean,
 )

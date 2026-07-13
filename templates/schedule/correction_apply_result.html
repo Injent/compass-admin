@@ -1,0 +1,11 @@
+<#if error??>
+  <div class="correction-message correction-message-error">
+    <m3e-icon name="error" variant="rounded"></m3e-icon>
+    <span>${error?html}</span>
+  </div>
+<#else>
+  <div class="correction-message">
+    <m3e-icon name="check" variant="rounded" style="color: #2dc052;"></m3e-icon>
+    <span>Применено: ${appliedCount}</span>
+  </div>
+</#if>

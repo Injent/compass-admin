@@ -60,11 +60,7 @@ class WordCorrectionService(
     }
 
     private fun Map<Int, String>.toCorrectionPrompt(): String =
-        entries.joinToString(
-            separator = "\n",
-            prefix = "Ввод осуществляется по ключам по строкам\nключ=значение\n",
-            postfix = "\n\nВывод\nключ=значение"
-        ) { (key, value) ->
+        entries.joinToString(separator = "\n") { (key, value) ->
             "$key=${value.replace("\r", " ").replace("\n", " ")}"
         }
 
@@ -83,7 +79,7 @@ class WordCorrectionService(
 
             val key = line.substring(0, separatorIdx).trim().toIntOrNull()
                 ?: error("Invalid correction key: '$line'")
-            val value = line.substring(separatorIdx + 1).trim()
+            val value = line.substring(separatorIdx + 1).trim().normalizeLessonCorrection()
 
             if (key !in allowedKeys) {
                 error("Unknown correction key: '$key'")
@@ -96,4 +92,59 @@ class WordCorrectionService(
         }
         return result
     }
+
+    private fun String.normalizeLessonCorrection(): String {
+        var result = trim()
+            .replace(WHITESPACE_REGEX, " ")
+            .replace(SPACES_BEFORE_CLOSING_BRACKET_REGEX, ")")
+            .replace(SPACES_AFTER_OPENING_BRACKET_REGEX, "(")
+            .replace(SPACES_AROUND_ROOM_SIGN_REGEX, " №")
+            .replace(BROKEN_ROOM_SIGN_REGEX, "№")
+            .replace(MISSING_SPACE_BEFORE_TEACHER_REGEX, "$1 (")
+            .removeTrailingDotAfterClosedBracket()
+
+        result = result.normalizeTeacherBrackets()
+        result = result.normalizeTeacherInitials()
+
+        return result.trim()
+    }
+
+    private fun String.normalizeTeacherBrackets(): String {
+        val openedIdx = lastIndexOf('(')
+        val closedIdx = lastIndexOf(')')
+        if (openedIdx >= 0 && closedIdx > openedIdx) return this
+
+        val match = TRAILING_TEACHER_WITH_ONLY_CLOSING_BRACKET_REGEX.find(this) ?: return this
+        return replaceRange(match.range, "(${match.groupValues[1]})")
+    }
+
+    private fun String.normalizeTeacherInitials(): String =
+        replace(TEACHER_BRACKETS_REGEX) { match ->
+            val teacher = match.groupValues[1].trim().replace(WHITESPACE_REGEX, " ")
+            val parts = teacher.split(" ", limit = 2)
+            if (parts.size != 2) return@replace match.value
+
+            val initials = parts[1]
+                .replace(".", "")
+                .replace(" ", "")
+                .takeIf { rawInitials -> rawInitials.length in 1..2 && rawInitials.all(Char::isLetter) }
+                ?.map { initial -> "$initial." }
+                ?.joinToString("")
+                ?: return@replace match.value
+
+            "(${parts[0]} $initials)"
+        }
+
+    private fun String.removeTrailingDotAfterClosedBracket(): String =
+        if (endsWith(").")) dropLast(1) else this
 }
+
+private val WHITESPACE_REGEX = Regex("\\s+")
+private val SPACES_BEFORE_CLOSING_BRACKET_REGEX = Regex("\\s+\\)")
+private val SPACES_AFTER_OPENING_BRACKET_REGEX = Regex("\\(\\s+")
+private val SPACES_AROUND_ROOM_SIGN_REGEX = Regex("\\s*№\\s+")
+private val BROKEN_ROOM_SIGN_REGEX = Regex("№[/\\\\]+")
+private val MISSING_SPACE_BEFORE_TEACHER_REGEX = Regex("([^\\s(])\\(")
+private val TEACHER_BRACKETS_REGEX = Regex("\\(([^()]*)\\)")
+private val TRAILING_TEACHER_WITH_ONLY_CLOSING_BRACKET_REGEX =
+    Regex("([А-ЯЁ][А-ЯЁа-яё'\\-]+\\s+[А-ЯЁ](?:\\.?\\s*[А-ЯЁ]\\.?)?)\\)$")

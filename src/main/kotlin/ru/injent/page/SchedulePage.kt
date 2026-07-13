@@ -12,14 +12,21 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import ru.injent.dto.FileStatus
+import ru.injent.service.google.CellReplacement
 import ru.injent.service.google.NewGoogleService
+import ru.injent.service.google.SheetValidator
+import ru.injent.service.wordcorrection.WordCorrectionService
 import kotlin.time.Clock
 
-fun Routing.schedulePage(googleService: NewGoogleService) {
+fun Routing.schedulePage(
+    googleService: NewGoogleService,
+    wordCorrectionService: WordCorrectionService,
+    sheetValidators: Collection<SheetValidator>,
+) {
     get("/schedule") {
         call.respond(
             FreeMarkerContent(
-                "schedule/schedule.ftl",
+                "schedule/schedule.html",
                 scheduleModel(googleService.files.value)
             )
         )
@@ -30,8 +37,55 @@ fun Routing.schedulePage(googleService: NewGoogleService) {
         call.respond(
             status = if (uploadResult.error == null) HttpStatusCode.OK else HttpStatusCode.BadRequest,
             message = FreeMarkerContent(
-                "schedule/schedule_list.ftl",
+                "schedule/schedule_list.html",
                 scheduleModel(googleService.files.value, uploadResult.error)
+            )
+        )
+    }
+
+    post("/schedule/delete") {
+        val selectedIds = call.receiveParameters()
+            .getAll("fileId")
+            .orEmpty()
+            .distinct()
+
+        val existingIds = googleService.files.value
+            .map { file -> file.fileId }
+            .toSet()
+        val fileIds = selectedIds.filter(existingIds::contains)
+
+        val error = when {
+            fileIds.isEmpty() -> "Выберите файлы для удаления"
+            else -> googleService.freeFiles(fileIds).exceptionOrNull()?.message
+        }
+
+        call.respond(
+            FreeMarkerContent(
+                "schedule/schedule_list.html",
+                scheduleModel(googleService.files.value, error)
+            )
+        )
+    }
+
+    post("/schedule/restore/{fileId}") {
+        val fileId = call.parameters["fileId"].orEmpty()
+        val existingFile = googleService.files.value.firstOrNull { file -> file.fileId == fileId }
+
+        val error = when {
+            existingFile == null -> "Файл не найден"
+            existingFile.status != FileStatus.EMPTY -> "Файл уже восстановлен"
+            else -> try {
+                googleService.restore(fileId)
+                null
+            } catch (error: Exception) {
+                error.message
+            }
+        }
+
+        call.respond(
+            FreeMarkerContent(
+                "schedule/schedule_list.html",
+                scheduleModel(googleService.files.value, error)
             )
         )
     }
@@ -43,10 +97,77 @@ fun Routing.schedulePage(googleService: NewGoogleService) {
             .drop(1)
             .collectLatest { model ->
                 send(
-                    data = renderTemplate("schedule/schedule_list.ftl", model),
+                    data = renderTemplate("schedule/schedule_list.html", model),
                     event = "ScheduleListUpdate"
                 )
             }
+    }
+
+    get("/schedule/corrections/{fileId}") {
+        val fileId = call.parameters["fileId"].orEmpty()
+        call.respond(
+            FreeMarkerContent(
+                "schedule/correction_pane.html",
+                correctionPaneModel(fileId)
+            )
+        )
+    }
+
+    post("/schedule/corrections/{fileId}/suggest") {
+        val fileId = call.parameters["fileId"].orEmpty()
+        val result = googleService.suggestLessonCorrections(fileId, wordCorrectionService)
+
+        call.respond(
+            status = if (result.isSuccess) HttpStatusCode.OK else HttpStatusCode.InternalServerError,
+            message = FreeMarkerContent(
+                "schedule/correction_results.html",
+                correctionResultsModel(
+                    fileId = fileId,
+                    suggestions = result.getOrDefault(emptyList()),
+                    error = result.exceptionOrNull()?.message
+                )
+            )
+        )
+    }
+
+    post("/schedule/corrections/{fileId}/apply") {
+        val fileId = call.parameters["fileId"].orEmpty()
+        val replacements = call.receiveParameters().toCellReplacements()
+        val result = googleService.applyLessonCorrections(fileId, replacements)
+            .fold(
+                onSuccess = { googleService.test(fileId, sheetValidators) },
+                onFailure = { Result.failure(it) }
+            )
+
+        call.respond(
+            status = if (result.isSuccess) HttpStatusCode.OK else HttpStatusCode.InternalServerError,
+            message = FreeMarkerContent(
+                "schedule/correction_apply_result.html",
+                correctionApplyResultModel(
+                    appliedCount = if (result.isSuccess) replacements.size else 0,
+                    error = result.exceptionOrNull()?.message
+                )
+            )
+        )
+    }
+}
+
+private fun Parameters.toCellReplacements(): List<CellReplacement> {
+    val rowIndexes = getAll("rowIdx").orEmpty()
+    val colIndexes = getAll("colIdx").orEmpty()
+    val values = getAll("value").orEmpty()
+    val count = minOf(rowIndexes.size, colIndexes.size, values.size)
+
+    return (0 until count).mapNotNull { index ->
+        val rowIdx = rowIndexes[index].toIntOrNull() ?: return@mapNotNull null
+        val colIdx = colIndexes[index].toIntOrNull() ?: return@mapNotNull null
+        val value = values[index].trim().takeIf(String::isNotBlank) ?: return@mapNotNull null
+
+        CellReplacement(
+            rowIdx = rowIdx,
+            colIdx = colIdx,
+            value = value
+        )
     }
 }
 
@@ -86,6 +207,7 @@ private suspend fun uploadFilesToFreeSlots(
                 inputStream = part.streamProvider()
                 appProperties[KEY_STATUS] = FileStatus.PROCESSING.name
                 appProperties[KEY_UPLOAD_TIME] = Clock.System.now().toEpochMilliseconds().toString()
+                appProperties[KEY_CAN_FIX_WITH_AI] = false.toString()
             }.getOrThrow()
             uploadedCount++
         } finally {
@@ -109,3 +231,4 @@ private data class UploadResult(
 
 private const val KEY_STATUS = "status"
 private const val KEY_UPLOAD_TIME = "uploadTime"
+private const val KEY_CAN_FIX_WITH_AI = "canFixWithAi"
