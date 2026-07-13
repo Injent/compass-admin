@@ -51,5 +51,5 @@ dependencies {
 val compileKotlin: KotlinCompile by tasks
 
 compileKotlin.compilerOptions {
-    freeCompilerArgs.set(listOf("-Xexplicit-backing-fields"))
+    freeCompilerArgs.set(listOf("-Xexplicit-backing-fields", "-Xcontext-parameters"))
 }

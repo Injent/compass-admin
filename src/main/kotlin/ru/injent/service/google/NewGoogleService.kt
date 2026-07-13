@@ -182,7 +182,7 @@ class NewGoogleService(
                 val updateStatusDeferred = async {
                     val newStatus = if (accumulatedErrors.isEmpty()) FileStatus.VALID else FileStatus.INVALID
                     if (files.value.find { it.fileId == fileId }?.status == newStatus) return@async
-                    
+
                     updateFileContent(fileId) {
                         appProperties[KEY_STATUS] = newStatus.toString()
                     }

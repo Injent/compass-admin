@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>{{ file_name }} - Редактор</title>
+  <title>${file.name} - Редактор</title>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
@@ -27,19 +27,16 @@
 <body>
 
   <iframe
-    src="https://docs.google.com/spreadsheets/d/{{ file_id }}/edit"
+    src="https://docs.google.com/spreadsheets/d/${file.fileId}/edit"
     class="w-full h-full border-none block"
     allow="autoplay">
   </iframe>
 
-  <!-- SSE: connect to the status stream, swap snackbar content on StatusUpdate event -->
   <div class="m3-snackbar-container"
        hx-ext="sse"
-       sse-connect="/schedule/status/sse/{{ file_id }}">
+       sse-connect="/schedule/status/sse/${file.fileId}">
     <div id="editor-snackbar" sse-swap="StatusUpdate" hx-swap="innerHTML">
-      <div class="m3-snackbar no-anim">
-        <div class="m3-snackbar-text">Загрузка статуса...</div>
-      </div>
+      <#include "/schedule/status_snackbar.ftl">
     </div>
   </div>
 

@@ -1,0 +1,286 @@
+:root {
+    --md-sys-color-background: var(--md-sys-color-surface-container-low);
+    --m3e-scrollbar-width: thin;
+}
+
+html {
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    color-scheme: light !important;
+}
+
+body {
+    font-family: "Roboto", sans-serif;
+    height: 100vh;
+    height: 100dvh;
+    width: 100vw;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+/* Ensure the theme wrapper spans full screen and applies background */
+m3e-theme,
+.app-layout {
+    display: block;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+/* Flex Layout for the app */
+.app-layout {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    height: 100%;
+}
+
+/* Sidebar navigation rail */
+m3e-nav-rail {
+    height: 100%;
+    flex-shrink: 0;
+    --m3e-nav-rail-top-space: 24px
+}
+
+/* Main Content Wrapper */
+.app-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 8px 0px 0px 0px;
+    /* Top=24px, Right=0px, Bottom=0px, Left=0px (removed padding between rail and pane) */
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+/* HTMX container inside app-content */
+#content-area {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+/* Schedule Header */
+.schedule-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    margin-bottom: 8px;
+    /* Align title from the left edge */
+    padding-right: 16px;
+    /* Keep padding for header elements on the right */
+    box-sizing: border-box;
+    flex-shrink: 0;
+}
+
+#file-search-bar {
+    max-width: 620px;
+    width: 100%;
+    margin-right: 16px;
+    height: 48px;
+}
+
+.actions-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Loader styling */
+.loader-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    width: 100%;
+    padding: 0px 24px;
+    box-sizing: border-box;
+}
+
+.loader-text {
+    font-size: 16px;
+    color: var(--md-sys-color-on-surface-variant);
+    font-weight: 500;
+}
+
+/* Content Pane configuration */
+m3e-content-pane,
+.schedule-pane {
+    width: 100%;
+    flex: 1;
+    /* Stretch to fill the remaining vertical height */
+    box-sizing: border-box;
+    display: block;
+    overflow-y: auto;
+    /* Enable scroll within pane */
+
+    /* CSS Custom Property for border shape */
+    --m3e-content-pane-container-shape: 24px 0px 0px 0px;
+    --m3e-content-pane-container-color: var(--md-sys-color-surface);
+    --m3e-content-pane-container-padding: 0px;
+}
+
+/* Safe fallback: CSS class named --m3e-content-pane-container-shape */
+.\--m3e-content-pane-container-shape {
+    border-top-left-radius: 24px !important;
+    border-top-right-radius: 0px !important;
+    border-bottom-left-radius: 0px !important;
+    border-bottom-right-radius: 0px !important;
+}
+
+/* List container padding inside the pane */
+#schedule-list-container {
+    padding: 16px;
+    box-sizing: border-box;
+}
+
+.schedule-table-row {
+    display: grid;
+    grid-template-columns: 40px minmax(220px, 1fr) minmax(140px, 180px) minmax(140px, 180px);
+    align-items: center;
+    column-gap: 16px;
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+}
+
+.schedule-table-heading-action {
+    cursor: default;
+    pointer-events: none;
+}
+
+.schedule-table-heading-row {
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.schedule-table-heading-row m3e-heading {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.schedule-file-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.schedule-file-date {
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 14px;
+    font-weight: 400;
+    white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+    .schedule-table-heading-action {
+        display: none;
+    }
+
+    .schedule-table-row {
+        grid-template-columns: 40px 1fr;
+        row-gap: 4px;
+    }
+
+    .schedule-file-date {
+        font-size: 12px;
+        grid-column: 2;
+    }
+}
+
+m3e-nav-item .nav-item-label {
+    transition: margin-left 0.2s ease-in-out;
+}
+
+m3e-nav-item[orientation="horizontal"] .nav-item-label {
+    margin-left: 8px;
+    font-size: 14px;
+}
+
+/* Material 3 Snackbar styling */
+.m3-snackbar-container {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 1000;
+    pointer-events: none;
+}
+
+.m3-snackbar {
+    background-color: var(--md-sys-color-inverse-surface, #313033);
+    color: var(--md-sys-color-inverse-on-surface, #f4eff4);
+    border-radius: 4px;
+    padding: 12px 16px;
+    min-width: 288px;
+    max-width: 568px;
+    box-shadow: 0px 3px 5px -1px rgba(0, 0, 0, 0.2), 
+                0px 6px 10px 0px rgba(0, 0, 0, 0.14), 
+                0px 1px 18px 0px rgba(0, 0, 0, 0.12);
+    font-size: 14px;
+    font-family: Roboto, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    pointer-events: auto;
+    animation: m3-snackbar-slide-in 0.25s cubic-bezier(0, 0, 0.2, 1);
+}
+
+.m3-snackbar.success {
+    border-left: 4px solid #2dc052;
+}
+
+.m3-snackbar.error {
+    border-left: 4px solid #ff3b30;
+}
+
+.m3-snackbar.no-anim {
+    animation: none !important;
+}
+
+.m3-snackbar-text {
+    flex: 1;
+}
+
+.m3-snackbar-close {
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+
+.m3-snackbar-close:hover {
+    opacity: 1;
+}
+
+@keyframes m3-snackbar-slide-in {
+    from {
+        transform: translateY(20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}

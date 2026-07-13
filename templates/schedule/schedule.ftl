@@ -3,7 +3,7 @@
     <m3e-icon name="search" slot="leading"></m3e-icon>
     <input id="search-input" slot="input" placeholder="Поиск файлов..." />
   </m3e-search-bar>
-  
+
   <div class="actions-wrapper">
     <m3e-split-button>
       <m3e-button slot="leading-button" id="upload-btn">
@@ -15,7 +15,7 @@
         <m3e-menu-trigger for="menu"></m3e-menu-trigger>
       </m3e-icon-button>
     </m3e-split-button>
-    
+
     <m3e-menu id="menu" position-x="before">
       <m3e-menu-item>Скачать все</m3e-menu-item>
       <m3e-menu-item>Удалить</m3e-menu-item>
@@ -23,8 +23,7 @@
   </div>
 </div>
 
-<!-- Hidden file input for file uploading -->
-<input type="file" id="file-input" name="file" accept=".xlsx, .xls" style="display: none;"
+<input type="file" id="file-input" name="files" accept=".xlsx,.xls" multiple style="display: none;"
        hx-post="/schedule/upload"
        hx-trigger="change"
        hx-target="#schedule-list"
@@ -32,19 +31,18 @@
        hx-encoding="multipart/form-data">
 
 <m3e-content-pane class="schedule-pane">
-  <div id="schedule-list-container" hx-ext="sse" sse-connect="/schedule/list/sse?signature={{ schedule_signature|default('') }}">
+  <div id="schedule-list-container" hx-ext="sse" sse-connect="/schedule/list/sse">
     <m3e-filter-chip-set id="status-filter-chips" aria-label="Фильтр по статусу" style="margin-bottom: 16px;">
       <m3e-filter-chip id="chip-all" selected data-filter="all">Все</m3e-filter-chip>
       <m3e-filter-chip id="chip-ready" data-filter="valid">Проверенные</m3e-filter-chip>
       <m3e-filter-chip id="chip-error" data-filter="invalid">С ошибками</m3e-filter-chip>
     </m3e-filter-chip-set>
-    {% include "schedule/schedule_list.html" %}
+    <#include "/schedule/schedule_list.ftl">
   </div>
 </m3e-content-pane>
 
 <script>
   (function() {
-    // 1. File Upload Button Trigger
     document.addEventListener('click', function(e) {
       const uploadBtn = e.target.closest('#upload-btn');
       if (uploadBtn) {
@@ -52,7 +50,6 @@
       }
     });
 
-    // File Click Trigger (opens Google Sheet edit view in a new tab with editor template)
     document.addEventListener('click', function(e) {
       const listAction = e.target.closest('m3e-list-action');
       if (listAction) {
@@ -63,34 +60,33 @@
       }
     });
 
-    // 2. Frontend Search & Status Filter logic
     const filterFiles = () => {
       const searchInput = document.getElementById('search-input');
       if (!searchInput) return;
-      
+
       const query = searchInput.value.toLowerCase().trim();
       const selectedChip = document.querySelector('#status-filter-chips m3e-filter-chip[selected]');
       const selectedFilter = selectedChip ? selectedChip.getAttribute('data-filter') : 'all';
-      
+
       const container = document.querySelector('m3e-action-list');
       if (!container) return;
-      
+
       const children = Array.from(container.children);
       let lastVisibleAction = null;
-      
+
       children.forEach(child => {
         const tag = child.tagName.toLowerCase();
         if (tag === 'm3e-list-action') {
           const text = child.textContent.toLowerCase();
           const status = child.getAttribute('data-status') || '';
-          
+
           const matchesSearch = text.includes(query);
           const matchesFilter = (
             selectedFilter === 'all' ||
             (selectedFilter === 'valid' && status === 'VALID') ||
             (selectedFilter === 'invalid' && status === 'INVALID')
           );
-          
+
           if (matchesSearch && matchesFilter) {
             child.style.display = '';
             if (lastVisibleAction) {
@@ -112,14 +108,12 @@
       });
     };
 
-    // Event listener for keystrokes in the search input
     document.addEventListener('input', function(e) {
       if (e.target.id === 'search-input') {
         filterFiles();
       }
     });
 
-    // Event listener for the clearable button clearing
     document.addEventListener('clear', function(e) {
       const searchBar = e.target.closest('#file-search-bar');
       if (searchBar) {
@@ -129,7 +123,6 @@
       }
     });
 
-    // 3. Event listener for filter chips clicks
     document.addEventListener('click', function(e) {
       const chip = e.target.closest('m3e-filter-chip');
       if (chip) {
@@ -148,16 +141,15 @@
       }
     });
 
-    // 5. Processing shapes animation
     let processingInterval = null;
     const processingShapesList = ["9-sided-cookie", "6-sided-cookie", "4-sided-cookie", "pill", "circle"];
     let processingShapeIndex = 0;
-    
+
     const startProcessingAnimation = () => {
       if (processingInterval) {
         clearInterval(processingInterval);
       }
-      
+
       processingInterval = setInterval(() => {
         const shapes = document.querySelectorAll('.processing-shape');
         if (shapes.length === 0) {
@@ -165,20 +157,18 @@
           processingInterval = null;
           return;
         }
-        
+
         processingShapeIndex = (processingShapeIndex + 1) % processingShapesList.length;
         const nextShapeName = processingShapesList[processingShapeIndex];
-        
+
         shapes.forEach(shape => {
           shape.setAttribute('name', nextShapeName);
         });
       }, 700);
     };
 
-    // Start on initial load
     startProcessingAnimation();
 
-    // 4. Re-apply filter and restart animation when HTMX swaps the list (e.g. after uploading a file)
     document.addEventListener('htmx:afterSwap', function(e) {
       if (e.detail.target.id === 'schedule-list-container' || e.detail.target.id === 'schedule-list') {
         filterFiles();

@@ -12,6 +12,7 @@ import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.cors.routing.*
 import io.ktor.server.plugins.forwardedheaders.*
 import io.ktor.server.resources.*
+import io.ktor.server.routing.*
 import io.ktor.server.sse.*
 import io.ktor.util.logging.*
 import kotlinx.coroutines.CoroutineDispatcher
@@ -20,10 +21,12 @@ import kotlinx.coroutines.runBlocking
 import org.koin.dsl.module
 import org.koin.ktor.ext.get
 import org.koin.ktor.plugin.Koin
+import ru.injent.page.*
 import ru.injent.service.config.AppConfig
 import ru.injent.service.google.NewGoogleService
 import ru.injent.service.google.googleModule
 import ru.injent.service.validator.LegendValidator
+import ru.injent.service.validator.LessonValidator
 import ru.injent.service.validator.validatorModule
 import java.io.File
 
@@ -57,30 +60,42 @@ fun Application.configureApp() {
         allowCredentials = true
     }
     install(XForwardedHeaders)
-    install(FreeMarker) {
-        templateLoader = Configuration(Configuration.VERSION_2_3_32).apply {
-            templateLoader = FileTemplateLoader(File("templates"))
-            defaultEncoding = "UTF-8"
-            templateExceptionHandler = TemplateExceptionHandler.RETHROW_HANDLER
-            logTemplateExceptions = true
-            wrapUncheckedExceptions = true
-        }.templateLoader
-    }
     install(Koin) {
         modules(
             module {
                 single<Logger> { environment.log }
                 single { appConfig }
                 single<CoroutineDispatcher> { Dispatchers.IO }
+                single<Configuration> {
+                    Configuration(Configuration.VERSION_2_3_32).apply {
+                        templateLoader = FileTemplateLoader(File("templates"))
+                        defaultEncoding = "UTF-8"
+                        templateExceptionHandler = TemplateExceptionHandler.RETHROW_HANDLER
+                        logTemplateExceptions = true
+                        wrapUncheckedExceptions = true
+                    }
+                }
             },
             validatorModule,
             googleModule
         )
     }
+    install(FreeMarker) {
+        templateLoader = get<Configuration>().templateLoader
+    }
+
+    val googleService = get<NewGoogleService>()
+    val sheetValidators = listOf(LegendValidator, LessonValidator)
+
     runBlocking {
-        get<NewGoogleService>().test(
-            fileId = "1oeJ1AB_PNI28BON5_ukOEhdmIl3sfGNSHpbwdmr97Ww",
-            listOf(LegendValidator)
-        )
+        googleService.loadFiles()
+    }
+
+    routing {
+        staticAssets()
+        indexPage()
+        schedulePage(googleService)
+        editorPage(googleService)
+        googleSheetsCallbackPage(googleService, sheetValidators, this@configureApp)
     }
 }

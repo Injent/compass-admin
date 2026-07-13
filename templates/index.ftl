@@ -10,7 +10,7 @@
         rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0"
         rel="stylesheet">
-         <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0"
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0"
         rel="stylesheet">
     <link rel="stylesheet" href="/static/css/index.css">
     <script type="module" src="https://cdn.jsdelivr.net/npm/@m3e/web@2.5.16/dist/all.min.js"></script>
@@ -23,23 +23,21 @@
 <body>
     <m3e-theme strong-focus>
         <div class="app-layout">
-            <!-- Sidebar Navigation Rail -->
             <m3e-nav-rail id="nav-rail">
                 <m3e-icon-button toggle>
                     <m3e-icon name="menu"></m3e-icon>
                     <m3e-icon slot="selected" name="menu_open"></m3e-icon>
                     <m3e-nav-rail-toggle for="nav-rail"></m3e-nav-rail-toggle>
                 </m3e-icon-button>
-                <m3e-nav-item hx-get="/schedule" hx-target="#content-area" hx-trigger="click" active>
+                <m3e-nav-item class="active-nav-item" data-route="/schedule" hx-get="/schedule" hx-target="#content-area" hx-trigger="click" active selected>
                     <m3e-icon slot="icon" name="calendar_today"></m3e-icon>
+                    <m3e-icon slot="selected" name="calendar_today"></m3e-icon>
                     <span class="nav-item-label">Расписание</span>
                 </m3e-nav-item>
             </m3e-nav-rail>
 
-            <!-- Main Content Area -->
             <main class="app-content">
                 <div id="content-area" hx-get="/schedule" hx-trigger="load" hx-swap="innerHTML">
-                    <!-- Loading State placeholder -->
                     <div class="loader-wrapper">
                         <span class="loader-text">Подключение к Google Drive...</span>
                     </div>
@@ -49,19 +47,45 @@
     </m3e-theme>
 
     <script>
-        // Toggle active state for nav-items
-        document.addEventListener('click', function (e) {
-            const navItem = e.target.closest('m3e-nav-item');
-            if (navItem) {
-                const rail = navItem.closest('m3e-nav-rail');
-                if (rail) {
-                    rail.querySelectorAll('m3e-nav-item').forEach(item => {
-                        item.removeAttribute('active');
-                    });
-                    navItem.setAttribute('active', '');
+        function setActiveNav(route) {
+            const rail = document.getElementById('nav-rail');
+            if (!rail) return;
+
+            rail.querySelectorAll('m3e-nav-item').forEach(item => {
+                if (item.dataset.route === route) {
+                    item.classList.add('active-nav-item');
+                    item.active = true;
+                    item.selected = true;
+                    item.setAttribute('active', '');
+                    item.setAttribute('selected', '');
+                } else {
+                    item.classList.remove('active-nav-item');
+                    item.active = false;
+                    item.selected = false;
+                    item.removeAttribute('active');
+                    item.removeAttribute('selected');
                 }
+            });
+        }
+
+        document.addEventListener('click', function (e) {
+            const navItem = e.target.closest('m3e-nav-item[data-route]');
+            if (navItem) {
+                setActiveNav(navItem.dataset.route);
             }
         });
+
+        document.addEventListener('htmx:afterOnLoad', function (e) {
+            const path = e.detail.pathInfo && e.detail.pathInfo.requestPath;
+            if (path) {
+                setActiveNav(path);
+            }
+        });
+
+        customElements.whenDefined('m3e-nav-item')
+            .then(() => setActiveNav('/schedule'))
+            .catch(() => setActiveNav('/schedule'));
+        document.addEventListener('DOMContentLoaded', () => setActiveNav('/schedule'));
     </script>
 </body>
 
