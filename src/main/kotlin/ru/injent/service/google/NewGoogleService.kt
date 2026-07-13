@@ -5,8 +5,6 @@ import com.google.api.services.drive.Drive
 import com.google.api.services.drive.model.File
 import com.google.api.services.sheets.v4.Sheets
 import com.google.api.services.sheets.v4.model.*
-import ru.injent.dto.FileStatus
-import ru.injent.dto.SheetsFile
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,6 +12,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.Logger
+import ru.injent.dto.FileStatus
+import ru.injent.dto.SheetsFile
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -116,14 +116,28 @@ class NewGoogleService(
     }
 
     suspend fun freeFiles(fileIds: Collection<String>) = runResulting("free files = $fileIds") {
-        // Помечает файлы из fileIds статусом empty с помощью функции updateFileContent асинхронно
+        fileIds.distinct()
+            .map { fileId ->
+                async {
+                    updateFileContent(fileId) {
+                        appProperties[KEY_STATUS] = FileStatus.EMPTY.toString()
+                    }.getOrThrow()
+                }
+            }
+            .awaitAll()
+        Unit
     }
 
-    suspend fun test() {
+    suspend fun test(validators: Collection<SheetValidator>) {
         val sheet = getSheet("1oeJ1AB_PNI28BON5_ukOEhdmIl3sfGNSHpbwdmr97Ww")
             .getOrThrow()
 
-        SheetValidatorScope(sheet)
+        val scope = SheetValidatorScope(sheet)
+        validators.forEach { validator ->
+            with(validator) {
+                scope.validate()
+            }
+        }
     }
 
     private suspend fun getSheet(fileId: String) = runResulting("get sheet '$fileId'") {

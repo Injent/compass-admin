@@ -14,10 +14,14 @@ import io.ktor.server.resources.*
 import io.ktor.server.sse.*
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import org.koin.dsl.module
+import org.koin.ktor.ext.get
 import org.koin.ktor.plugin.Koin
 import org.slf4j.LoggerFactory
+import ru.injent.service.google.NewGoogleService
 import ru.injent.service.google.googleModule
+import ru.injent.service.validator.LegendValidator
 import java.io.File
 
 fun Application.configureApp() {
@@ -58,6 +62,11 @@ fun Application.configureApp() {
                 single<CoroutineDispatcher> { Dispatchers.IO }
             },
             googleModule
+        )
+    }
+    runBlocking {
+        get<NewGoogleService>().test(
+            listOf(LegendValidator)
         )
     }
 }
