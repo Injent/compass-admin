@@ -31,6 +31,8 @@ class NewGoogleService(
 
     private val fileMutexes = mutableMapOf<String, Mutex>()
     private val fileMutexesGuard = Mutex()
+    private val validationJobs = mutableMapOf<String, Job>()
+    private val validationJobsGuard = Mutex()
 
     val files: StateFlow<List<SheetsFile>>
         field = MutableStateFlow(emptyList())
@@ -128,14 +130,69 @@ class NewGoogleService(
         Unit
     }
 
-    suspend fun test(validators: Collection<SheetValidator>) {
-        val sheet = getSheet("1oeJ1AB_PNI28BON5_ukOEhdmIl3sfGNSHpbwdmr97Ww")
-            .getOrThrow()
+    /**
+     * Проверяет валидность таблицы по правилам валидаторов
+     * Если вызвать повторно когда старая операция еще не закончилась, то она прервется и начнется новая
+     */
+    suspend fun test(
+        fileId: String,
+        validators: Collection<SheetValidator>
+    ): Result<Unit> = coroutineScope {
+        val currentJob = coroutineContext.job
+        val previousJob = validationJobsGuard.withLock {
+            validationJobs.put(fileId, currentJob)
+        }
+        previousJob?.cancelAndJoin()
 
-        val scope = SheetValidatorScope(sheet)
-        validators.forEach { validator ->
-            with(validator) {
-                scope.validate()
+        try {
+            runResulting("validating $fileId") {
+                val sheet = getSheet(fileId).getOrThrow()
+
+                val scope = SheetValidatorScope(sheet)
+                validators.forEach { validator ->
+                    with(validator) {
+                        scope.validate()
+                    }
+                }
+                val accumulatedErrors = scope.getAccumulatedErrors().map { cellError ->
+                    InvalidCellRequest(
+                        sheetId = sheet.properties.sheetId,
+                        colIdx = cellError.colIdx,
+                        rowIdx = cellError.rowIdx,
+                        comment = cellError.comment
+                    )
+                }
+                val fixedErrors = scope.getFixedErrors().map { cellError ->
+                    ValidCellRequest(
+                        sheetId = sheet.properties.sheetId,
+                        colIdx = cellError.colIdx,
+                        rowIdx = cellError.rowIdx
+                    )
+                }
+                val updateSheetsDeferred = async {
+                    sheets.spreadsheets()
+                        .batchUpdate(
+                            fileId,
+                            BatchUpdateSpreadsheetRequest()
+                                .setRequests(accumulatedErrors + fixedErrors)
+                                .also { if (it.requests.isEmpty()) return@async }
+                        )
+                        .execute()
+                }
+                val updateStatusDeferred = async {
+                    updateFileContent(fileId) {
+                        appProperties[KEY_STATUS] =
+                            (if (accumulatedErrors.isEmpty()) FileStatus.VALID else FileStatus.INVALID).toString()
+                    }
+                }
+                listOf(updateStatusDeferred, updateSheetsDeferred).awaitAll()
+                Unit
+            }
+        } finally {
+            validationJobsGuard.withLock {
+                if (validationJobs[fileId] == currentJob) {
+                    validationJobs.remove(fileId)
+                }
             }
         }
     }
@@ -265,13 +322,17 @@ class NewGoogleService(
         operation: String,
         block: suspend CoroutineScope.() -> T,
     ): Result<T> = withContext(ioDispatcher) {
-        runCatching {
+        try {
             logger.debug("starting '$operation'")
-            block()
-        }.onSuccess {
+            val result = block()
             logger.info("completed '$operation'")
-        }.onFailure { error ->
+            Result.success(result)
+        } catch (error: CancellationException) {
+            logger.info("cancelled '$operation'")
+            throw error
+        } catch (error: Throwable) {
             logger.error("failed '$operation'", error)
+            Result.failure(error)
         }
     }
 
@@ -344,13 +405,7 @@ private fun InvalidCellRequest(
             CellData()
                 .setNote(comment)
                 .setUserEnteredFormat(
-                    CellFormat()
-                        .setBackgroundColor(
-                            Color()
-                                .setRed(0.957f)
-                                .setGreen(0.78f)
-                                .setBlue(0.765f)
-                        )
+                    CellFormat().setBackgroundColor(ErrorBackgroundColor)
                 )
         )
         .setRange(
@@ -363,3 +418,8 @@ private fun InvalidCellRequest(
         )
         .setFields("note, userEnteredFormat.backgroundColor")
 )
+
+private val ErrorBackgroundColor: Color = Color()
+    .setRed(0.957f)
+    .setGreen(0.78f)
+    .setBlue(0.765f)

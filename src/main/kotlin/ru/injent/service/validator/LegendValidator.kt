@@ -72,7 +72,7 @@ private fun SheetValidatorScope.validateTableHeaders() {
 
         headerCell.test {
             if (value.hasGroupLikeWord()) {
-                error("В названии заголовка не должно быть слов, похожих на 'группа'")
+                error("В названии заголовка не должно быть лишних слов кроме названия группы")
             }
         }
 
@@ -82,7 +82,7 @@ private fun SheetValidatorScope.validateTableHeaders() {
         subheaders.forEach { subheaderCell ->
             subheaderCell.test {
                 if (value.hasGroupLikeWord()) {
-                    error("В названии подзаголовка не должно быть слов, похожих на 'группа'")
+                    error("В названии подзаголовка не должно быть лишних слов кроме названия группы")
                 }
             }
         }
@@ -166,7 +166,7 @@ private fun SheetValidatorScope.validateTimeCellsForDay(
     timeCellsBetween(dayCell.rowIdx, scanEndRow).forEach { timeCell ->
         timeCell.test {
             if (!value.isTimeRange()) {
-                error("Время должно быть в формате #.##-#.## или ##.##-##.##")
+                error("Время должно быть в формате ЧЧ.ММ-ЧЧ.ММ")
             }
             if (colIdx == SECOND_TIME_COL_IDX && !isRedText) {
                 error("В столбце C текст времени должен быть красным")

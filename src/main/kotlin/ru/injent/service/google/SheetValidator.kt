@@ -41,6 +41,32 @@ class SheetValidatorScope(
             }
     }
 
+    private val initialErrorCells = rows.flatten().filter(Cell::hasBackground)
+
+    /**
+     * Возвращет ошибки, которые были исправлены во время проверки
+     */
+    fun getFixedErrors(): List<CellError> {
+        val currentErrorCells = accumulatedErrors
+            .map { error -> error.rowIdx to error.colIdx }
+            .toSet()
+
+        return initialErrorCells
+            .filter { cell -> cell.rowIdx to cell.colIdx !in currentErrorCells }
+            .map { cell ->
+                CellError(
+                    rowIdx = cell.rowIdx,
+                    colIdx = cell.colIdx,
+                    comment = ""
+                )
+            }
+    }
+
+    /**
+     * Возвращает накопленные ошибки за время проверки
+     */
+    fun getAccumulatedErrors(): List<CellError> = accumulatedErrors
+
     fun Cell.test(block: Cell.() -> Unit) {
         try {
             block(this)
@@ -99,6 +125,9 @@ data class Cell(
 
     val isBoldText: Boolean
         get() = cellRef.userEnteredFormat?.textFormat?.bold ?: false
+
+    val hasBackground: Boolean
+        get() = cellRef.userEnteredFormat?.backgroundColor != null
 
     val borders: Borders?
         get() = cellRef.userEnteredFormat?.borders?.let { borders ->
