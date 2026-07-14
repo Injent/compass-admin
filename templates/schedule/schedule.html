@@ -30,6 +30,7 @@
         Отмена
       </m3e-menu-item>
     </m3e-menu>
+    <div id="schedule-menu-stash" hidden></div>
   </div>
 </div>
 
@@ -142,13 +143,26 @@
     };
 
     const updateMenuMode = () => {
+      const menu = document.getElementById('menu');
+      const menuStash = document.getElementById('schedule-menu-stash');
       const downloadItem = document.getElementById('download-all-menu-item');
       const deleteItem = document.getElementById('delete-mode-menu-item');
       const cancelItem = document.getElementById('cancel-delete-mode-menu-item');
+      if (!menu || !menuStash || !downloadItem || !deleteItem || !cancelItem) return;
 
-      if (downloadItem) downloadItem.hidden = deleteMode;
-      if (deleteItem) deleteItem.hidden = deleteMode;
-      if (cancelItem) cancelItem.hidden = !deleteMode;
+      if (deleteMode) {
+        menuStash.appendChild(downloadItem);
+        menuStash.appendChild(deleteItem);
+        menu.appendChild(cancelItem);
+        cancelItem.hidden = false;
+      } else {
+        menuStash.appendChild(cancelItem);
+        menu.appendChild(downloadItem);
+        menu.appendChild(deleteItem);
+        downloadItem.hidden = false;
+        deleteItem.hidden = false;
+        cancelItem.hidden = true;
+      }
     };
 
     const setScheduleSelectionMode = (enabled) => {

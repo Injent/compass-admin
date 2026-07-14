@@ -3,17 +3,25 @@ package ru.injent.service.validator
 import ru.injent.service.google.Cell
 import ru.injent.service.google.SheetValidator
 import ru.injent.service.google.SheetValidatorScope
+import ru.injent.service.teacher.TeacherService
 
-var shortTeacherNames: Set<String> = emptySet()
+class LessonValidator(
+    private val teacherService: TeacherService,
+) : SheetValidator {
+    override fun SheetValidatorScope.validate() {
+        val shortTeacherNames = teacherService.getAll()
+            .map { teacher -> teacher.shortName.normalizedSpaces() }
+            .filter(String::isNotBlank)
+            .toSet()
 
-val LessonValidator = SheetValidator {
-    lessonCells().forEach { cell ->
-        cell.test {
-            value.orEmpty()
-                .lines()
-                .map(String::trim)
-                .filter(String::isNotEmpty)
-                .forEach(::validateLessonLine)
+        lessonCells().forEach { cell ->
+            cell.test {
+                value.orEmpty()
+                    .lines()
+                    .map(String::trim)
+                    .filter(String::isNotEmpty)
+                    .forEach { line -> validateLessonLine(line, shortTeacherNames) }
+            }
         }
     }
 }
@@ -53,7 +61,7 @@ private fun SheetValidatorScope.firstLessonRowIdx(): Int {
     } ?: SUBHEADER_ROW_IDX
 }
 
-private fun validateLessonLine(line: String) {
+private fun validateLessonLine(line: String, shortTeacherNames: Set<String>) {
     if (line.endsWith(".")) {
         error("Строка пары не должна заканчиваться точкой")
     }
@@ -66,7 +74,7 @@ private fun validateLessonLine(line: String) {
     }
 
     roundBracketRanges.forEach { range ->
-        validateTeacherName(line.substring(range.first + 1, range.last))
+        validateTeacherName(line.substring(range.first + 1, range.last), shortTeacherNames)
     }
 }
 
@@ -131,7 +139,7 @@ private fun validateBracketsBalance(line: String): List<IntRange> {
     return roundBracketRanges
 }
 
-private fun validateTeacherName(rawName: String) {
+private fun validateTeacherName(rawName: String, shortTeacherNames: Set<String>) {
     val teacherName = rawName.normalizedSpaces()
 
     if (teacherName.isBlank()) {
@@ -149,8 +157,8 @@ private fun validateTeacherName(rawName: String) {
         error("ФИО преподавателя должно быть в формате Фамилия И.О. или Фамилия И.")
     }
 
-    if (shortTeacherNames.isNotEmpty() && shortTeacherNames.none { it.normalizedSpaces() == teacherName }) {
-        error("Преподаватель '$teacherName' отсутствует в списке разрешенных коротких имен")
+    if (shortTeacherNames.none { it == teacherName }) {
+        error("Этого преподавателя нет в базе данных. Если вы уверены что он есть, то добавьте информацию о нем во вкладке Преподаватели")
     }
 }
 

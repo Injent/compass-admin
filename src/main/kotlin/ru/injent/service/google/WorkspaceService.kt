@@ -30,6 +30,8 @@ class NewGoogleService(
     private val sheets: Sheets,
     private val logger: Logger,
     private val ioDispatcher: CoroutineDispatcher,
+    private val legendValidator: LegendValidator,
+    private val lessonValidator: LessonValidator,
 ) {
 
     private val fileMutexes = mutableMapOf<String, Mutex>()
@@ -137,7 +139,7 @@ class NewGoogleService(
     }
 
     suspend fun restore(fileId: String) {
-        val sheetValidators = listOf(LegendValidator, LessonValidator)
+        val sheetValidators = listOf(legendValidator, lessonValidator)
         test(fileId, sheetValidators)
     }
 
@@ -166,7 +168,7 @@ class NewGoogleService(
                     with(validator) {
                         scope.validate()
                     }
-                    if (validator === LessonValidator && scope.getAccumulatedErrors().size > errorsBefore) {
+                    if (validator === lessonValidator && scope.getAccumulatedErrors().size > errorsBefore) {
                         canFixWithAi = true
                     }
                 }
@@ -224,7 +226,7 @@ class NewGoogleService(
         val sheet = getSheet(fileId).getOrThrow()
         val scope = SheetValidatorScope(sheet)
 
-        with(LessonValidator) {
+        with(lessonValidator) {
             scope.validate()
         }
 

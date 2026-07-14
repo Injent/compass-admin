@@ -1,0 +1,362 @@
+<div class="schedule-header">
+  <m3e-search-bar id="teacher-search-bar" clearable>
+    <m3e-icon name="search" slot="leading"></m3e-icon>
+    <input id="teacher-search-input" slot="input" placeholder="Поиск преподавателей" />
+  </m3e-search-bar>
+
+  <div class="actions-wrapper">
+    <m3e-split-button>
+      <m3e-button slot="leading-button" id="teacher-primary-action" data-mode="add">
+        <m3e-icon slot="icon" id="teacher-primary-action-icon" name="add" variant="rounded"></m3e-icon>
+        Добавить
+      </m3e-button>
+      <m3e-icon-button slot="trailing-button">
+        <m3e-icon name="keyboard_arrow_down"></m3e-icon>
+        <m3e-menu-trigger for="teachers-menu"></m3e-menu-trigger>
+      </m3e-icon-button>
+    </m3e-split-button>
+
+    <m3e-menu id="teachers-menu" position-x="before">
+      <m3e-menu-item id="teachers-delete-mode-menu-item">
+        <m3e-icon slot="icon" name="delete" variant="rounded"></m3e-icon>
+        Удалить
+      </m3e-menu-item>
+      <m3e-menu-item id="teachers-cancel-delete-mode-menu-item" hidden>
+        <m3e-icon slot="icon" name="close" variant="rounded"></m3e-icon>
+        Отмена
+      </m3e-menu-item>
+    </m3e-menu>
+    <div id="teachers-menu-stash" hidden></div>
+  </div>
+</div>
+
+<form id="teachers-delete-form"
+      hx-post="/teachers/delete"
+      hx-target="#teachers-list-container"
+      hx-swap="outerHTML"
+      style="display: none;"></form>
+
+<m3e-content-pane class="schedule-pane teachers-pane">
+  <#include "/teachers/teachers_list_container.html">
+</m3e-content-pane>
+
+<script>
+  (function() {
+    let teacherDeleteMode = false;
+
+    const menu = document.getElementById('teachers-menu');
+    const menuStash = document.getElementById('teachers-menu-stash');
+    const deleteMenuItem = document.getElementById('teachers-delete-mode-menu-item');
+    const cancelMenuItem = document.getElementById('teachers-cancel-delete-mode-menu-item');
+    const primaryButton = () => document.getElementById('teacher-primary-action');
+    const primaryIcon = () => document.getElementById('teacher-primary-action-icon');
+    const actionList = () => document.querySelector('#teachers-list > .teachers-action-list');
+    const selectionList = () => document.querySelector('#teachers-list > .teachers-selection-list');
+
+    const setTeacherPrimaryLabel = (label) => {
+      const button = primaryButton();
+      if (!button) return;
+
+      Array.from(button.childNodes)
+        .filter(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim())
+        .forEach(node => {
+          const counter = teacherDeleteMode ? ' ' + selectedTeacherIds().length + '/' + selectableTeacherCount() : '';
+          node.textContent = ' ' + label + counter;
+        });
+    };
+
+    const selectedTeacherIds = () => {
+      const list = selectionList();
+      if (!list) return [];
+
+      return Array.from(list.querySelectorAll('m3e-list-option[data-id]'))
+        .filter(option => option.style.display !== 'none')
+        .filter(option => option.selected || option.hasAttribute('selected') || option.getAttribute('aria-selected') === 'true')
+        .map(option => option.getAttribute('data-id'))
+        .filter(Boolean)
+        .filter((id, index, ids) => ids.indexOf(id) === index);
+    };
+
+    const selectableTeacherCount = () => {
+      const list = selectionList();
+      if (!list) return 0;
+
+      return Array.from(list.querySelectorAll('m3e-list-option[data-id]'))
+        .filter(option => option.style.display !== 'none')
+        .length;
+    };
+
+    const syncTeacherCheckboxes = () => {
+      const list = selectionList();
+      if (!list) return;
+
+      list.querySelectorAll('m3e-list-option[data-id]').forEach(option => {
+        const checkbox = option.querySelector('m3e-checkbox');
+        if (!checkbox) return;
+
+        const selected = option.selected || option.hasAttribute('selected') || option.getAttribute('aria-selected') === 'true';
+        checkbox.checked = selected;
+        if (selected) {
+          checkbox.setAttribute('checked', '');
+        } else {
+          checkbox.removeAttribute('checked');
+        }
+      });
+    };
+
+    const clearTeacherSelection = () => {
+      const list = selectionList();
+      if (!list) return;
+
+      list.querySelectorAll('m3e-list-option').forEach(option => {
+        option.selected = false;
+        option.removeAttribute('selected');
+        option.removeAttribute('aria-selected');
+      });
+      syncTeacherCheckboxes();
+    };
+
+    const isTeacherFormChanged = (form) => {
+      const lastName = (form.querySelector('input[name="lastName"]')?.value || '').trim();
+      const firstName = (form.querySelector('input[name="firstName"]')?.value || '').trim();
+      const middleName = (form.querySelector('input[name="middleName"]')?.value || '').trim();
+
+      return !(
+        lastName === (form.dataset.initialLastName || '').trim() &&
+        firstName === (form.dataset.initialFirstName || '').trim() &&
+        middleName === (form.dataset.initialMiddleName || '').trim()
+      );
+    };
+
+    const updateTeacherSaveButtons = () => {
+      document.querySelectorAll('.teacher-edit-form').forEach(form => {
+        const saveButton = form.querySelector('.teacher-save-button');
+        if (!saveButton) return;
+
+        const changed = isTeacherFormChanged(form);
+        saveButton.disabled = !changed;
+        if (changed) {
+          saveButton.removeAttribute('disabled');
+        } else {
+          saveButton.setAttribute('disabled', '');
+        }
+      });
+    };
+
+    const updateTeachersMenuMode = () => {
+      if (!menu || !menuStash || !deleteMenuItem || !cancelMenuItem) return;
+
+      if (teacherDeleteMode) {
+        menuStash.appendChild(deleteMenuItem);
+        menu.appendChild(cancelMenuItem);
+        cancelMenuItem.hidden = false;
+      } else {
+        menuStash.appendChild(cancelMenuItem);
+        menu.appendChild(deleteMenuItem);
+        deleteMenuItem.hidden = false;
+        cancelMenuItem.hidden = true;
+      }
+    };
+
+    const updateTeacherPrimaryAction = () => {
+      const button = primaryButton();
+      const icon = primaryIcon();
+      if (!button || !icon) return;
+
+      const actions = actionList();
+      const selections = selectionList();
+      if (actions) actions.hidden = teacherDeleteMode;
+      if (selections) selections.hidden = !teacherDeleteMode;
+      updateTeachersMenuMode();
+      syncTeacherCheckboxes();
+
+      if (!teacherDeleteMode) {
+        button.dataset.mode = 'add';
+        icon.setAttribute('name', 'add');
+        setTeacherPrimaryLabel('Добавить');
+        return;
+      }
+
+      const count = selectedTeacherIds().length;
+      if (count > 0) {
+        button.dataset.mode = 'delete';
+        icon.setAttribute('name', 'delete');
+        setTeacherPrimaryLabel('Удалить');
+      } else {
+        button.dataset.mode = 'cancel-delete';
+        icon.setAttribute('name', 'close');
+        setTeacherPrimaryLabel('Отмена');
+      }
+    };
+
+    const enterTeacherDeleteMode = () => {
+      teacherDeleteMode = true;
+      clearTeacherSelection();
+      updateTeacherPrimaryAction();
+    };
+
+    const exitTeacherDeleteMode = () => {
+      teacherDeleteMode = false;
+      clearTeacherSelection();
+      updateTeacherPrimaryAction();
+    };
+
+    const submitTeachersDeletion = () => {
+      const ids = selectedTeacherIds();
+      if (ids.length === 0) {
+        exitTeacherDeleteMode();
+        return;
+      }
+
+      const form = document.getElementById('teachers-delete-form');
+      if (!form) return;
+
+      form.innerHTML = '';
+      ids.forEach(id => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'teacherId';
+        input.value = id;
+        form.appendChild(input);
+      });
+
+      if (form.requestSubmit) {
+        form.requestSubmit();
+      } else {
+        form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      }
+    };
+
+    const filterTeachers = () => {
+      const input = document.getElementById('teacher-search-input');
+      const query = input ? input.value.toLowerCase().trim() : '';
+
+      document.querySelectorAll('#teachers-list > .teachers-action-list, #teachers-list > .teachers-selection-list').forEach(container => {
+        Array.from(container.children).forEach(child => {
+          const tag = child.tagName.toLowerCase();
+          if (tag === 'm3e-divider') {
+            child.style.display = 'none';
+            return;
+          }
+
+          const searchable = tag === 'm3e-expansion-panel' || tag === 'm3e-list-option';
+          if (!searchable) return;
+
+          const matches = child.textContent.toLowerCase().includes(query);
+          child.style.display = matches ? '' : 'none';
+          if (matches) {
+            const previous = child.previousElementSibling;
+            if (previous && previous.tagName.toLowerCase() === 'm3e-divider') {
+              previous.style.display = '';
+            }
+          }
+        });
+      });
+
+      syncTeacherCheckboxes();
+      updateTeacherPrimaryAction();
+    };
+
+    document.addEventListener('click', function(e) {
+      const primary = e.target.closest('#teacher-primary-action');
+      if (primary) {
+        if (primary.dataset.mode === 'delete') {
+          submitTeachersDeletion();
+        } else if (primary.dataset.mode === 'cancel-delete') {
+          exitTeacherDeleteMode();
+        } else {
+          htmx.ajax('POST', '/teachers/add', { target: '#teachers-list-container', swap: 'outerHTML' });
+        }
+        return;
+      }
+
+      if (e.target.closest('#teachers-delete-mode-menu-item')) {
+        enterTeacherDeleteMode();
+        return;
+      }
+
+      if (e.target.closest('#teachers-cancel-delete-mode-menu-item')) {
+        exitTeacherDeleteMode();
+        return;
+      }
+
+      const editButton = e.target.closest('.teacher-edit-button');
+      if (editButton) {
+        const panel = editButton.closest('m3e-expansion-panel');
+        if (panel) {
+          panel.open = true;
+          panel.setAttribute('open', '');
+          const firstInput = panel.querySelector('input[name="lastName"]');
+          if (firstInput) window.setTimeout(() => firstInput.focus(), 0);
+        }
+        return;
+      }
+
+      const saveButton = e.target.closest('.teacher-save-button');
+      if (saveButton) {
+        if (saveButton.disabled || saveButton.hasAttribute('disabled')) return;
+        const form = saveButton.closest('form');
+        if (form) form.requestSubmit();
+        return;
+      }
+
+      const listOption = e.target.closest('m3e-list-option');
+      if (listOption && teacherDeleteMode) {
+        window.setTimeout(() => {
+          syncTeacherCheckboxes();
+          updateTeacherPrimaryAction();
+        }, 0);
+      }
+    });
+
+    document.addEventListener('input', function(e) {
+      if (e.target.id === 'teacher-search-input') {
+        filterTeachers();
+      } else if (e.target.closest && e.target.closest('.teacher-edit-form')) {
+        updateTeacherSaveButtons();
+      } else if (e.target.closest && e.target.closest('m3e-selection-list')) {
+        syncTeacherCheckboxes();
+        updateTeacherPrimaryAction();
+      }
+    });
+
+    document.addEventListener('change', function(e) {
+      if (e.target.closest && e.target.closest('m3e-selection-list')) {
+        syncTeacherCheckboxes();
+        updateTeacherPrimaryAction();
+      }
+    });
+
+    document.addEventListener('submit', function(e) {
+      const form = e.target.closest && e.target.closest('.teacher-edit-form');
+      if (form && !isTeacherFormChanged(form)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }, true);
+
+    document.addEventListener('clear', function(e) {
+      const searchBar = e.target.closest('#teacher-search-bar');
+      if (searchBar) {
+        const input = document.getElementById('teacher-search-input');
+        if (input) input.value = '';
+        filterTeachers();
+      }
+    });
+
+    document.addEventListener('htmx:afterSwap', function(e) {
+      if (e.detail.target.id === 'teachers-list-container') {
+        if (teacherDeleteMode) {
+          exitTeacherDeleteMode();
+        } else {
+          updateTeacherPrimaryAction();
+        }
+        filterTeachers();
+      }
+    });
+
+    updateTeacherPrimaryAction();
+    filterTeachers();
+    updateTeacherSaveButtons();
+  })();
+</script>

@@ -3,6 +3,7 @@ package ru.injent.page
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.freemarker.*
+import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import java.io.File
@@ -15,10 +16,14 @@ fun Routing.indexPage() {
 
 fun indexModel(call: ApplicationCall): Map<String, Any> =
     mapOf(
-        "initialScheduleUrl" to call.initialScheduleUrl()
+        "initialContentUrl" to call.initialContentUrl()
     )
 
-private fun ApplicationCall.initialScheduleUrl(): String {
+private fun ApplicationCall.initialContentUrl(): String {
+    if (request.path().startsWith("/teachers")) {
+        return "/teachers"
+    }
+
     val filter = (request.queryParameters["f"] ?: request.queryParameters["filter"] ?: "all")
         .normalizeScheduleFilter()
     return if (filter == "all") "/schedule" else "/schedule?f=$filter"

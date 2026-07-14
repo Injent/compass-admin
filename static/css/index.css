@@ -82,7 +82,8 @@ m3e-nav-rail {
     flex-shrink: 0;
 }
 
-#file-search-bar {
+#file-search-bar,
+#teacher-search-bar {
     max-width: 620px;
     width: 100%;
     margin-right: 16px;
@@ -143,13 +144,16 @@ m3e-content-pane,
 }
 
 /* List container padding inside the pane */
-#schedule-list-container {
+#schedule-list-container,
+#teachers-list-container {
     padding: 16px;
     box-sizing: border-box;
 }
 
 #schedule-list > m3e-action-list[hidden],
-#schedule-list > m3e-selection-list[hidden] {
+#schedule-list > m3e-selection-list[hidden],
+#teachers-list > .teachers-action-list[hidden],
+#teachers-list > m3e-selection-list[hidden] {
     display: none;
 }
 
@@ -398,6 +402,88 @@ m3e-content-pane,
     white-space: nowrap;
 }
 
+.teachers-pane {
+    flex: 1;
+}
+
+.teachers-action-list {
+    display: block;
+}
+
+.teacher-panel-header {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.teacher-table-row {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr);
+    align-items: center;
+    column-gap: 16px;
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+}
+
+.teacher-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.teacher-row-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    width: 96px;
+    min-width: 96px;
+    max-width: 96px;
+    flex: 0 0 96px;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.teacher-edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: min(520px, 100%);
+    padding: 8px 0 16px 0;
+    box-sizing: border-box;
+}
+
+.teacher-edit-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+}
+
+.teacher-edit-fields m3e-form-field {
+    width: 100%;
+    max-width: 520px;
+}
+
+.teacher-edit-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.teacher-native-submit {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+}
+
 @media (max-width: 760px) {
     .schedule-workspace {
         position: relative;
@@ -416,6 +502,15 @@ m3e-content-pane,
         font-size: 12px;
         grid-column: 2;
     }
+
+    .teacher-table-row {
+        grid-template-columns: 1fr;
+        row-gap: 4px;
+    }
+
+    .teacher-edit-form {
+        padding-right: 0;
+    }
 }
 
 m3e-nav-item .nav-item-label {
@@ -425,6 +520,10 @@ m3e-nav-item .nav-item-label {
 m3e-nav-item[orientation="horizontal"] .nav-item-label {
     margin-left: 8px;
     font-size: 14px;
+}
+
+.density-3 {
+    --md-sys-density-scale: -3;
 }
 
 /* Material 3 Snackbar styling */

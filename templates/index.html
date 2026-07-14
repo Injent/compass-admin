@@ -34,10 +34,15 @@
                     <m3e-icon slot="selected" name="calendar_today" variant="rounded"></m3e-icon>
                     <span class="nav-item-label">Расписание</span>
                 </m3e-nav-item>
+                <m3e-nav-item data-route="/teachers" hx-get="/teachers" hx-target="#content-area" hx-trigger="click" hx-push-url="/teachers">
+                    <m3e-icon slot="icon" name="co_present" variant="rounded"></m3e-icon>
+                    <m3e-icon slot="selected" name="co_present" variant="rounded"></m3e-icon>
+                    <span class="nav-item-label">Преподаватели</span>
+                </m3e-nav-item>
             </m3e-nav-rail>
 
             <main class="app-content">
-                <div id="content-area" hx-get="${initialScheduleUrl}" hx-trigger="load" hx-swap="innerHTML" hx-replace-url="${initialScheduleUrl}">
+                <div id="content-area" hx-get="${initialContentUrl}" hx-trigger="load" hx-swap="innerHTML" hx-replace-url="${initialContentUrl}">
                     <div class="loader-wrapper">
                         <span class="loader-text">Подключение к Google Drive...</span>
                     </div>
@@ -78,6 +83,9 @@
             if (cleanPath === '/' || cleanPath.startsWith('/schedule')) {
                 return '/schedule';
             }
+            if (cleanPath.startsWith('/teachers')) {
+                return '/teachers';
+            }
 
             return null;
         }
@@ -97,9 +105,9 @@
         });
 
         customElements.whenDefined('m3e-nav-item')
-            .then(() => setActiveNav('/schedule'))
-            .catch(() => setActiveNav('/schedule'));
-        document.addEventListener('DOMContentLoaded', () => setActiveNav('/schedule'));
+            .then(() => setActiveNav(window.location.pathname))
+            .catch(() => setActiveNav(window.location.pathname));
+        document.addEventListener('DOMContentLoaded', () => setActiveNav(window.location.pathname));
     </script>
 </body>
 

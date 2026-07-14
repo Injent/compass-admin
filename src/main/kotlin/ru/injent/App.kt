@@ -26,6 +26,7 @@ import ru.injent.page.*
 import ru.injent.service.config.AppConfig
 import ru.injent.service.google.NewGoogleService
 import ru.injent.service.google.googleModule
+import ru.injent.service.teacher.TeacherService
 import ru.injent.service.validator.LegendValidator
 import ru.injent.service.validator.LessonValidator
 import ru.injent.service.validator.validatorModule
@@ -74,6 +75,7 @@ fun Application.configureApp() {
                 single<Logger> { environment.log }
                 single { appConfig }
                 single<CoroutineDispatcher> { Dispatchers.IO }
+                single { TeacherService() }
                 single<Configuration> {
                     Configuration(Configuration.VERSION_2_3_32).apply {
                         templateLoader = FileTemplateLoader(File("templates"))
@@ -95,7 +97,8 @@ fun Application.configureApp() {
 
     val googleService = get<NewGoogleService>()
     val wordCorrectionService = get<WordCorrectionService>()
-    val sheetValidators = listOf(LegendValidator, LessonValidator)
+    val teacherService = get<TeacherService>()
+    val sheetValidators = listOf(get<LegendValidator>(), get<LessonValidator>())
 
     runBlocking {
         googleService.loadFiles()
@@ -105,6 +108,7 @@ fun Application.configureApp() {
         staticAssets()
         indexPage()
         schedulePage(googleService, wordCorrectionService, sheetValidators)
+        teachersPage(teacherService)
         editorPage(googleService)
         googleSheetsCallbackPage(googleService, sheetValidators, this@configureApp)
     }

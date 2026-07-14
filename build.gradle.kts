@@ -45,6 +45,8 @@ dependencies {
 
     implementation(platform(libs.exposed.bom))
     implementation(libs.exposed.core)
+    implementation(libs.exposed.jdbc)
+    implementation(libs.sqlite.jdbc)
 
     implementation(libs.gigachat)
 

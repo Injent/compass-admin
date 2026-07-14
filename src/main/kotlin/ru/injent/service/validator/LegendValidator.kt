@@ -4,10 +4,12 @@ import ru.injent.service.google.Cell
 import ru.injent.service.google.SheetValidator
 import ru.injent.service.google.SheetValidatorScope
 
-val LegendValidator = SheetValidator {
-    val firstScheduleRow = validateCorpusHeaders()
-    validateTableHeaders()
-    validateDayBlocks(firstScheduleRow)
+class LegendValidator : SheetValidator {
+    override fun SheetValidatorScope.validate() {
+        val firstScheduleRow = validateCorpusHeaders()
+        validateTableHeaders()
+        validateDayBlocks(firstScheduleRow)
+    }
 }
 
 private fun SheetValidatorScope.validateCorpusHeaders(): Int {
