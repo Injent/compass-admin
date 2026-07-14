@@ -6,7 +6,7 @@ import io.ktor.server.freemarker.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import ru.injent.service.teacher.Teacher
+import ru.injent.database.Teacher
 import ru.injent.service.teacher.TeacherService
 
 fun Routing.teachersPage(teacherService: TeacherService) {

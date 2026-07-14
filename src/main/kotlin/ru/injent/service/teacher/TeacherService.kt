@@ -1,45 +1,15 @@
 package ru.injent.service.teacher
 
 import org.jetbrains.exposed.v1.core.SortOrder
-import org.jetbrains.exposed.v1.core.dao.id.IntIdTable
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.jdbc.*
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
-
-data class Teacher(
-    val id: Int,
-    val lastName: String,
-    val firstName: String,
-    val middleName: String,
-    val departments: String,
-) {
-    val fullName: String
-        get() = listOf(lastName, firstName, middleName)
-            .filter(String::isNotBlank)
-            .joinToString(" ")
-            .ifBlank { "Новый преподаватель" }
-
-    val shortName: String
-        get() {
-            if (lastName.isBlank() || firstName.isBlank()) return ""
-
-            val firstInitial = firstName.firstOrNull()?.uppercaseChar()?.let { "$it." }.orEmpty()
-            val middleInitial = middleName.firstOrNull()?.uppercaseChar()?.let { "$it." }.orEmpty()
-            return "$lastName $firstInitial$middleInitial"
-        }
-}
+import ru.injent.database.Teacher
+import ru.injent.database.Teachers
 
 class TeacherService(
-    databasePath: String = "compassadmin.db",
+    private val database: Database,
 ) {
-    private val database = Database.connect("jdbc:sqlite:$databasePath", driver = "org.sqlite.JDBC")
-
-    init {
-        transaction(database) {
-            SchemaUtils.create(Teachers)
-        }
-    }
-
     fun getAll(): List<Teacher> = transaction(database) {
         Teachers
             .selectAll()
@@ -90,11 +60,4 @@ class TeacherService(
             Teachers.deleteWhere { Teachers.id eq id }
         }
     }
-}
-
-private object Teachers : IntIdTable("teachers") {
-    val lastName = varchar("last_name", 160)
-    val firstName = varchar("first_name", 160)
-    val middleName = varchar("middle_name", 160)
-    val departments = text("departments")
 }

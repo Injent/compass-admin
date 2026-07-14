@@ -1,0 +1,19 @@
+package ru.injent.database
+
+import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.jdbc.SchemaUtils
+import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import org.koin.dsl.module
+
+val databaseModule = module {
+    single {
+        Database.connect("jdbc:sqlite:compassadmin.db", driver = "org.sqlite.JDBC")
+            .also(::initializeDatabase)
+    }
+}
+
+private fun initializeDatabase(database: Database) {
+    transaction(database) {
+        SchemaUtils.create(Teachers)
+    }
+}

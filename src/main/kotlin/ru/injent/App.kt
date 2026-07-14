@@ -19,9 +19,11 @@ import io.ktor.util.logging.*
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
 import org.koin.ktor.ext.get
 import org.koin.ktor.plugin.Koin
+import ru.injent.database.databaseModule
 import ru.injent.page.*
 import ru.injent.service.config.AppConfig
 import ru.injent.service.google.NewGoogleService
@@ -75,7 +77,7 @@ fun Application.configureApp() {
                 single<Logger> { environment.log }
                 single { appConfig }
                 single<CoroutineDispatcher> { Dispatchers.IO }
-                single { TeacherService() }
+                singleOf(::TeacherService)
                 single<Configuration> {
                     Configuration(Configuration.VERSION_2_3_32).apply {
                         templateLoader = FileTemplateLoader(File("templates"))
@@ -86,6 +88,7 @@ fun Application.configureApp() {
                     }
                 }
             },
+            databaseModule,
             validatorModule,
             googleModule,
             wordCorrectionModule
