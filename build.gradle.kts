@@ -2,6 +2,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.shadow)
     alias(ktorLibs.plugins.ktor)
     alias(libs.plugins.kotlin.serialization)
 }
@@ -68,8 +69,32 @@ compileKotlin.compilerOptions {
 }
 
 tasks.shadowJar {
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    mergeServiceFiles()
+    append("META-INF/io.netty.versions.properties")
+    exclude("META-INF/LICENSE*")
+    exclude("META-INF/NOTICE*")
+    exclude("META-INF/DEPENDENCIES")
+
     minimize {
         r8 {
+            keepRules.addAll(
+                listOf(
+                    "-keep class ru.injent.AppKt { public static void configureApp(io.ktor.server.application.Application); }",
+                    "-dontwarn io.netty.internal.tcnative.**",
+                    "-dontwarn jakarta.servlet.**",
+                    "-dontwarn lombok.Generated",
+                    "-dontwarn org.apache.log4j.**",
+                    "-dontwarn org.apache.logging.log4j.**",
+                    "-dontwarn org.apache.xml.utils.**",
+                    "-dontwarn org.bouncycastle.**",
+                    "-dontwarn org.conscrypt.**",
+                    "-dontwarn org.jaxen.**",
+                    "-dontwarn org.python.**",
+                    "-dontwarn org.zeroturnaround.javarebel.**",
+                    "-dontwarn reactor.blockhound.**",
+                )
+            )
             enableObfuscation()
             enableOptimization()
         }
