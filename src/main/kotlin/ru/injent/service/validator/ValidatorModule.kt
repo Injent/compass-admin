@@ -6,4 +6,5 @@ import org.koin.dsl.module
 val validatorModule = module {
     singleOf(::LegendValidator)
     singleOf(::LessonValidator)
+    singleOf(::TeacherValidator)
 }

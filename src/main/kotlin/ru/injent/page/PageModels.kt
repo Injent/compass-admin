@@ -26,6 +26,9 @@ fun scheduleModel(files: List<SheetsFile>, error: String? = null, filter: String
     mapOf(
         "files" to files.filterByScheduleFilter(filter).map(SheetsFile::toView),
         "hasUnreadyFiles" to files.any { file -> file.status == FileStatus.INVALID || file.status == FileStatus.PROCESSING },
+        "allActiveFilesValid" to files
+            .filter { it.status != FileStatus.EMPTY }
+            .let { it.isNotEmpty() && it.all { file -> file.status == FileStatus.VALID } },
         "error" to error,
         "filter" to filter.normalizeScheduleFilter(),
     )

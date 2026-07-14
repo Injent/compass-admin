@@ -3,6 +3,8 @@ package ru.injent
 import freemarker.cache.FileTemplateLoader
 import freemarker.template.Configuration
 import freemarker.template.TemplateExceptionHandler
+import io.ktor.client.*
+import io.ktor.client.engine.cio.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
@@ -18,19 +20,22 @@ import io.ktor.server.sse.*
 import io.ktor.util.logging.*
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
 import org.koin.ktor.ext.get
 import org.koin.ktor.plugin.Koin
 import ru.injent.database.databaseModule
 import ru.injent.page.*
+import ru.injent.service.auth.AuthService
 import ru.injent.service.config.AppConfig
+import ru.injent.service.config.RemoteConfigService
 import ru.injent.service.google.NewGoogleService
 import ru.injent.service.google.googleModule
 import ru.injent.service.teacher.TeacherService
 import ru.injent.service.validator.LegendValidator
 import ru.injent.service.validator.LessonValidator
+import ru.injent.service.validator.TeacherValidator
 import ru.injent.service.validator.validatorModule
 import ru.injent.service.wordcorrection.WordCorrectionService
 import ru.injent.service.wordcorrection.wordCorrectionModule
@@ -77,7 +82,17 @@ fun Application.configureApp() {
                 single<Logger> { environment.log }
                 single { appConfig }
                 single<CoroutineDispatcher> { Dispatchers.IO }
+                single {
+                    HttpClient(CIO) {
+                        expectSuccess = true
+                        install(io.ktor.client.plugins.contentnegotiation.ContentNegotiation) {
+                            json()
+                        }
+                    }
+                }
                 singleOf(::TeacherService)
+                singleOf(::AuthService)
+                singleOf(::RemoteConfigService)
                 single<Configuration> {
                     Configuration(Configuration.VERSION_2_3_32).apply {
                         templateLoader = FileTemplateLoader(File("templates"))
@@ -98,20 +113,26 @@ fun Application.configureApp() {
         templateLoader = get<Configuration>().templateLoader
     }
 
+    val authService = get<AuthService>()
+    installAuthGuard(authService)
+
     val googleService = get<NewGoogleService>()
     val wordCorrectionService = get<WordCorrectionService>()
+    val httpClient = get<HttpClient>()
     val teacherService = get<TeacherService>()
-    val sheetValidators = listOf(get<LegendValidator>(), get<LessonValidator>())
+    val remoteConfigService = get<RemoteConfigService>()
+    val sheetValidators = listOf(get<LegendValidator>(), get<LessonValidator>(), get<TeacherValidator>())
 
-    runBlocking {
+    launch {
         googleService.loadFiles()
     }
-
     routing {
         staticAssets()
+        authPage(authService)
         indexPage()
-        schedulePage(googleService, wordCorrectionService, sheetValidators)
+        schedulePage(googleService, wordCorrectionService, sheetValidators, appConfig, httpClient, this@configureApp)
         teachersPage(teacherService)
+        configPage(remoteConfigService)
         editorPage(googleService)
         googleSheetsCallbackPage(googleService, sheetValidators, this@configureApp)
     }

@@ -3,30 +3,22 @@ package ru.injent.service.validator
 import ru.injent.service.google.Cell
 import ru.injent.service.google.SheetValidator
 import ru.injent.service.google.SheetValidatorScope
-import ru.injent.service.teacher.TeacherService
 
-class LessonValidator(
-    private val teacherService: TeacherService,
-) : SheetValidator {
+class LessonValidator : SheetValidator {
     override fun SheetValidatorScope.validate() {
-        val shortTeacherNames = teacherService.getAll()
-            .map { teacher -> teacher.shortName.normalizedSpaces() }
-            .filter(String::isNotBlank)
-            .toSet()
-
         lessonCells().forEach { cell ->
             cell.test {
                 value.orEmpty()
                     .lines()
                     .map(String::trim)
                     .filter(String::isNotEmpty)
-                    .forEach { line -> validateLessonLine(line, shortTeacherNames) }
+                    .forEach(::validateLessonLine)
             }
         }
     }
 }
 
-private fun SheetValidatorScope.lessonCells(): List<Cell> =
+internal fun SheetValidatorScope.lessonCells(): List<Cell> =
     firstLessonRowIdx().let { firstLessonRowIdx ->
         rows.asSequence()
             .drop(firstLessonRowIdx)
@@ -38,6 +30,15 @@ private fun SheetValidatorScope.lessonCells(): List<Cell> =
             }
             .toList()
     }
+
+internal fun String.lessonTeacherNames(): List<String> =
+    runCatching { balancedRoundBracketRanges() }
+        .getOrDefault(emptyList())
+        .map { range -> substring(range.first + 1, range.last).normalizedSpaces() }
+        .filter(String::isNotBlank)
+
+internal fun String.isLessonTeacherNameFormatValid(): Boolean =
+    !TEACHER_SEPARATOR_REGEX.containsMatchIn(this) && TEACHER_NAME_REGEX.matches(normalizedSpaces())
 
 private fun SheetValidatorScope.firstLessonRowIdx(): Int {
     val headerCells = rows.getOrNull(HEADER_ROW_IDX)
@@ -61,20 +62,20 @@ private fun SheetValidatorScope.firstLessonRowIdx(): Int {
     } ?: SUBHEADER_ROW_IDX
 }
 
-private fun validateLessonLine(line: String, shortTeacherNames: Set<String>) {
+private fun validateLessonLine(line: String) {
     if (line.endsWith(".")) {
         error("Строка пары не должна заканчиваться точкой")
     }
 
     validateRoom(line)
-    val roundBracketRanges = validateBracketsBalance(line)
+    val roundBracketRanges = line.balancedRoundBracketRanges()
 
     if (ROOM_SIGN in line && roundBracketRanges.isEmpty()) {
         error("Если указана аудитория через №, в строке должны быть круглые скобки с преподавателем")
     }
 
     roundBracketRanges.forEach { range ->
-        validateTeacherName(line.substring(range.first + 1, range.last), shortTeacherNames)
+        validateTeacherNameFormat(line.substring(range.first + 1, range.last))
     }
 }
 
@@ -104,11 +105,11 @@ private fun validateRoom(line: String) {
     }
 }
 
-private fun validateBracketsBalance(line: String): List<IntRange> {
+private fun String.balancedRoundBracketRanges(): List<IntRange> {
     val stack = ArrayDeque<Pair<Char, Int>>()
     val roundBracketRanges = mutableListOf<IntRange>()
 
-    line.forEachIndexed { idx, char ->
+    forEachIndexed { idx, char ->
         when (char) {
             '(',
             '[' -> stack.addLast(char to idx)
@@ -139,7 +140,7 @@ private fun validateBracketsBalance(line: String): List<IntRange> {
     return roundBracketRanges
 }
 
-private fun validateTeacherName(rawName: String, shortTeacherNames: Set<String>) {
+private fun validateTeacherNameFormat(rawName: String) {
     val teacherName = rawName.normalizedSpaces()
 
     if (teacherName.isBlank()) {
@@ -156,10 +157,6 @@ private fun validateTeacherName(rawName: String, shortTeacherNames: Set<String>)
     if (!TEACHER_NAME_REGEX.matches(teacherName)) {
         error("ФИО преподавателя должно быть в формате Фамилия И.О. или Фамилия И.")
     }
-
-    if (shortTeacherNames.none { it == teacherName }) {
-        error("Этого преподавателя нет в базе данных. Если вы уверены что он есть, то добавьте информацию о нем во вкладке Преподаватели")
-    }
 }
 
 private fun <T> ArrayDeque<T>.removeLastOrNullCompat(): T? =
@@ -168,7 +165,7 @@ private fun <T> ArrayDeque<T>.removeLastOrNullCompat(): T? =
 private fun String.indexesOf(char: Char): List<Int> =
     mapIndexedNotNull { idx, current -> idx.takeIf { current == char } }
 
-private fun String.normalizedSpaces(): String =
+internal fun String.normalizedSpaces(): String =
     trim().replace(WHITESPACE_REGEX, " ")
 
 private fun String.hasDotWithWrongCase(): Boolean =

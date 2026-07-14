@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ru" style="color-scheme: light;">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Compass Admin - Авторизация</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&amp;display=swap"
+          rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/index.css">
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@m3e/web@2.5.16/dist/all.min.js"></script>
+</head>
+<body>
+<m3e-theme strong-focus>
+    <main class="auth-layout">
+        <m3e-content-pane class="auth-pane" style="--m3e-content-pane-container-color: var(--md-sys-color-surface-container-lowest)">
+            <form id="auth-form" class="auth-form" autocomplete="on">
+                <m3e-heading variant="title" size="large">Авторизация</m3e-heading>
+
+                <m3e-form-field variant="outlined">
+                    <label slot="label" for="login">Логин</label>
+                    <input id="login" name="login" autocomplete="username" required autofocus />
+                </m3e-form-field>
+
+                <m3e-form-field variant="outlined">
+                    <label slot="label" for="password">Пароль</label>
+                    <input id="password" name="password" type="password" autocomplete="current-password" required />
+                </m3e-form-field>
+
+                <div id="auth-error" class="auth-error" hidden>Неверный логин или пароль</div>
+
+                <m3e-button id="auth-submit" variant="filled" size="medium" type="submit">Вход</m3e-button>
+            </form>
+        </m3e-content-pane>
+    </main>
+</m3e-theme>
+
+<script>
+    (function () {
+        const form = document.getElementById('auth-form');
+        const error = document.getElementById('auth-error');
+        const submit = document.getElementById('auth-submit');
+        const next = '${next?js_string}';
+
+        form.addEventListener('submit', async function (event) {
+            event.preventDefault();
+            error.hidden = true;
+            submit.disabled = true;
+            submit.setAttribute('disabled', '');
+
+            const login = document.getElementById('login').value;
+            const password = document.getElementById('password').value;
+            const bytes = new TextEncoder().encode(login + ':' + password);
+            const binary = Array.from(bytes, byte => String.fromCharCode(byte)).join('');
+            const token = btoa(binary);
+
+            try {
+                const response = await fetch('/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Basic ' + token
+                    },
+                    credentials: 'same-origin'
+                });
+
+                if (!response.ok) {
+                    error.hidden = false;
+                    return;
+                }
+
+                window.location.assign(next || '/');
+            } finally {
+                submit.disabled = false;
+                submit.removeAttribute('disabled');
+            }
+        });
+    })();
+</script>
+</body>
+</html>

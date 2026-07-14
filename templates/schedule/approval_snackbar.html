@@ -1,0 +1,15 @@
+<#if status != "IDLE">
+  <div class="m3-snackbar no-anim <#if status == "SUCCESS">success<#elseif status == "ERROR">error</#if>"
+       data-approval-status="${status}"
+       data-approval-progress="${progress}">
+    <div class="m3-snackbar-text">
+      <#if status == "RUNNING">
+        Отправка расписания: ${progress}%
+      <#elseif status == "SUCCESS">
+        Расписание отправлено
+      <#elseif status == "ERROR">
+        ${message!"Отправка расписания прервана"}
+      </#if>
+    </div>
+  </div>
+</#if>

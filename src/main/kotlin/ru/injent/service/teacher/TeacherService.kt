@@ -25,12 +25,17 @@ class TeacherService(
             }
     }
 
-    fun create(): Int = transaction(database) {
+    fun create(
+        lastName: String,
+        firstName: String,
+        middleName: String,
+        departments: String? = null,
+    ): Int = transaction(database) {
         Teachers.insertAndGetId {
-            it[lastName] = ""
-            it[firstName] = ""
-            it[middleName] = ""
-            it[departments] = ""
+            it[Teachers.lastName] = lastName.trim()
+            it[Teachers.firstName] = firstName.trim()
+            it[Teachers.middleName] = middleName.trim()
+            it[Teachers.departments] = departments?.trim().orEmpty()
         }.value
     }
 

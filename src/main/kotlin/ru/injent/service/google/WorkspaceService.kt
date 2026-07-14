@@ -16,6 +16,7 @@ import ru.injent.dto.FileStatus
 import ru.injent.dto.SheetsFile
 import ru.injent.service.validator.LegendValidator
 import ru.injent.service.validator.LessonValidator
+import ru.injent.service.validator.TeacherValidator
 import ru.injent.service.wordcorrection.WordCorrectionService
 import java.io.IOException
 import java.io.InputStream
@@ -32,6 +33,7 @@ class NewGoogleService(
     private val ioDispatcher: CoroutineDispatcher,
     private val legendValidator: LegendValidator,
     private val lessonValidator: LessonValidator,
+    private val teacherValidator: TeacherValidator,
 ) {
 
     private val fileMutexes = mutableMapOf<String, Mutex>()
@@ -50,15 +52,6 @@ class NewGoogleService(
         return Result.success(Unit)
     }
 
-    suspend fun export(fileId: String) = withFileLock(fileId) {
-        runResulting("download '$fileId'") {
-            drive.files()
-                .export(fileId, XLSX_MIME)
-                .executeMediaAsInputStream()
-                .readBytes()
-        }
-    }
-
     suspend fun exportAsXlsxTo(fileId: String, output: OutputStream) = withFileLock(fileId) {
         runResulting("download '$fileId'") {
             drive.files()
@@ -67,8 +60,9 @@ class NewGoogleService(
         }
     }
 
-    suspend fun exportAsZipTo(fileIds: Collection<String>, output: OutputStream) =
-        exportAsZipTo(fileIds.associateWith { id -> getFileName(id) ?: id }, output)
+    fun exportAsXlsx(fileId: String) = drive.files()
+        .export(fileId, XLSX_MIME)
+        .executeMediaAsInputStream()
 
     suspend fun exportAsZipTo(fileNamesById: Map<String, String>, output: OutputStream) =
         withFileLocks(fileNamesById.keys) {
@@ -101,15 +95,18 @@ class NewGoogleService(
         val previousFile = files.value.firstOrNull { it.fileId == fileId }
         applyOptimisticFileUpdate(fileId, contentScope)
 
-        val content = GoogleFile().apply {
-            contentScope.name?.let { this.name = it }
-            contentScope.appProperties.takeIf { it.isNotEmpty() }?.let { this.appProperties = it }
-        }
         val mediaContent = contentScope.inputStream?.let {
             InputStreamContent(SPREADSHEET_MIME, it)
         }
 
         runResulting("update file content '$fileId'") {
+            val content = GoogleFile().apply {
+                contentScope.name?.let { this.name = it }
+                mergeAppProperties(fileId, contentScope.appProperties)
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { this.appProperties = it }
+            }
+
             drive.files()
                 .run {
                     if (mediaContent != null) {
@@ -139,7 +136,7 @@ class NewGoogleService(
     }
 
     suspend fun restore(fileId: String) {
-        val sheetValidators = listOf(legendValidator, lessonValidator)
+        val sheetValidators = listOf(legendValidator, lessonValidator, teacherValidator)
         test(fileId, sheetValidators)
     }
 
@@ -302,7 +299,21 @@ class NewGoogleService(
             .sheets[0]
     }
 
-    private fun getFileName(fileId: String): String? = files.value.find { fileId == it.fileId }?.name
+    private fun mergeAppProperties(
+        fileId: String,
+        appPropertiesPatch: Map<String, String?>,
+    ): Map<String, String?> {
+        if (appPropertiesPatch.isEmpty()) return emptyMap()
+
+        val currentAppProperties = drive.files()
+            .get(fileId)
+            .setFields("appProperties")
+            .execute()
+            .appProperties
+            .orEmpty()
+
+        return currentAppProperties + appPropertiesPatch
+    }
 
     private suspend fun getFileMutex(fileId: String): Mutex =
         fileMutexesGuard.withLock {
@@ -436,10 +447,10 @@ class NewGoogleService(
         }
     }
 
-    class UpdateFileContentScope {
+    class UpdateFileContentScope() {
         var name: String? = null
         var inputStream: InputStream? = null
-        var appProperties: MutableMap<String, String> = mutableMapOf()
+        var appProperties: MutableMap<String, String?> = mutableMapOf()
     }
 }
 
@@ -461,7 +472,7 @@ data class CellReplacement(
 private typealias GoogleFile = File
 
 private const val XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-private const val WORKSPACE_FOLDER_NAME = "Расписание"
+private const val WORKSPACE_FOLDER_NAME = "Рабочее пространство"
 private const val DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder"
 private const val SPREADSHEET_MIME = "application/vnd.google-apps.spreadsheet"
 private const val KEY_STATUS = "status"

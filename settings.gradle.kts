@@ -12,6 +12,7 @@ plugins {
 dependencyResolutionManagement {
     repositories {
         mavenCentral()
+        google()
     }
     versionCatalogs {
         create("ktorLibs").from("io.ktor:ktor-version-catalog:3.5.0")
@@ -19,4 +20,3 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "compassadmin"
-

@@ -1,14 +1,9 @@
-<#macro teacherRow teacher>
-  <div class="teacher-table-row">
-    <span class="teacher-name">${teacher.fullName?html}</span>
-  </div>
-</#macro>
-
 <div id="teachers-list">
-  <#if teachers?has_content>
+  <#if hasTeachers>
     <m3e-action-list class="teachers-table-heading-list">
       <m3e-list-action class="schedule-table-heading-action" data-heading="true" tabindex="-1">
-        <div class="teacher-table-row schedule-table-heading-row">
+        <div class="schedule-table-heading-row">
+          <div style="width: 32px; opacity: 0"></div>
           <m3e-heading variant="label" size="large">ФИО</m3e-heading>
         </div>
         <div class="teacher-row-actions" slot="trailing"></div>
@@ -16,66 +11,9 @@
     </m3e-action-list>
     <m3e-divider></m3e-divider>
 
-    <div class="teachers-action-list">
-      <#list teachers as teacher>
-        <m3e-expansion-panel class="teacher-panel" hide-toggle <#if openTeacherId?? && openTeacherId == teacher.id>open</#if>>
-          <div class="teacher-panel-header" slot="header">
-            <@teacherRow teacher=teacher />
-            <div class="teacher-row-actions">
-              <m3e-icon-button class="teacher-edit-button">
-                <m3e-icon name="edit" variant="rounded"></m3e-icon>
-              </m3e-icon-button>
-            </div>
-          </div>
-
-          <form class="teacher-edit-form"
-                hx-post="/teachers/${teacher.id}"
-                hx-target="#teachers-list-container"
-                hx-swap="outerHTML"
-                data-initial-last-name="${teacher.lastName?html}"
-                data-initial-first-name="${teacher.firstName?html}"
-                data-initial-middle-name="${teacher.middleName?html}">
-            <div class="teacher-edit-fields">
-              <m3e-form-field hide-subscript="always" variant="outlined" class="density-3">
-                <label slot="label" for="teacher-${teacher.id}-last-name">Фамилия</label>
-                <input id="teacher-${teacher.id}-last-name" name="lastName" value="${teacher.lastName?html}" />
-              </m3e-form-field>
-              <m3e-form-field hide-subscript="always" variant="outlined" class="density-3">
-                <label slot="label" for="teacher-${teacher.id}-first-name">Имя</label>
-                <input id="teacher-${teacher.id}-first-name" name="firstName" value="${teacher.firstName?html}" />
-              </m3e-form-field>
-              <m3e-form-field hide-subscript="always" variant="outlined" class="density-3">
-                <label slot="label" for="teacher-${teacher.id}-middle-name">Отчество</label>
-                <input id="teacher-${teacher.id}-middle-name" name="middleName" value="${teacher.middleName?html}" />
-              </m3e-form-field>
-            </div>
-            <div class="teacher-edit-actions">
-              <m3e-button type="button"
-                          variant="outlined"
-                          hx-delete="/teachers/${teacher.id}"
-                          hx-target="#teachers-list-container"
-                          hx-swap="outerHTML">Удалить</m3e-button>
-              <m3e-button class="teacher-save-button" type="button" variant="filled" disabled>Сохранить</m3e-button>
-              <button class="teacher-native-submit" type="submit" tabindex="-1" aria-hidden="true">Сохранить</button>
-            </div>
-          </form>
-        </m3e-expansion-panel>
-        <#if teacher_has_next>
-          <m3e-divider inset></m3e-divider>
-        </#if>
-      </#list>
+    <div id="teachers-action-list" class="teachers-action-list">
+      <#include "/teachers/teachers_chunk.html">
     </div>
-
-    <m3e-selection-list class="teachers-selection-list" multi hide-selection-indicator hidden>
-      <#list teachers as teacher>
-        <m3e-list-option data-id="${teacher.id}" data-name="${teacher.fullName?html}">
-          <@teacherRow teacher=teacher />
-          <div class="teacher-row-actions" slot="trailing">
-            <m3e-checkbox class="schedule-selection-checkbox"></m3e-checkbox>
-          </div>
-        </m3e-list-option>
-      </#list>
-    </m3e-selection-list>
   <#else>
     <div class="schedule-empty-state" style="color: var(--md-sys-color-on-surface-variant); padding: 48px; text-align: center; display: flex; flex-direction: column; align-items: center;">
       <m3e-shape name="4-sided-cookie" style="--m3e-shape-container-color: var(--md-sys-color-surface-container); --m3e-shape-size: 96px;">

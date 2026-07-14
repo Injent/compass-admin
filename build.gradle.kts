@@ -16,6 +16,7 @@ application {
 kotlin {
     jvmToolchain(21)
 }
+
 dependencies {
     implementation(libs.kotlinx.datetime)
     implementation(ktorLibs.serialization.kotlinx.json)
@@ -38,6 +39,12 @@ dependencies {
     implementation(libs.koin.loggerSlf4j)
     implementation(libs.logback.classic)
 
+    implementation(ktorLibs.client.core)
+    implementation(ktorLibs.client.contentNegotiation)
+    implementation(ktorLibs.client.json)
+    implementation(ktorLibs.client.cio)
+    implementation(ktorLibs.client.serialization)
+
     implementation(libs.google.auth)
     implementation(libs.google.apiClient)
     implementation(libs.google.drive)
@@ -58,4 +65,13 @@ val compileKotlin: KotlinCompile by tasks
 
 compileKotlin.compilerOptions {
     freeCompilerArgs.set(listOf("-Xexplicit-backing-fields", "-Xcontext-parameters"))
+}
+
+tasks.shadowJar {
+    minimize {
+        r8 {
+            enableObfuscation()
+            enableOptimization()
+        }
+    }
 }

@@ -1,7 +1,7 @@
 <div class="schedule-header">
   <m3e-search-bar id="teacher-search-bar" clearable>
     <m3e-icon name="search" slot="leading"></m3e-icon>
-    <input id="teacher-search-input" slot="input" placeholder="Поиск преподавателей" />
+    <input id="teacher-search-input" name="q" slot="input" placeholder="Поиск преподавателей" value="${teacherQuery?html}" />
   </m3e-search-bar>
 
   <div class="actions-wrapper">
@@ -43,6 +43,7 @@
 <script>
   (function() {
     let teacherDeleteMode = false;
+    let teacherSearchTimer = null;
 
     const menu = document.getElementById('teachers-menu');
     const menuStash = document.getElementById('teachers-menu-stash');
@@ -51,7 +52,7 @@
     const primaryButton = () => document.getElementById('teacher-primary-action');
     const primaryIcon = () => document.getElementById('teacher-primary-action-icon');
     const actionList = () => document.querySelector('#teachers-list > .teachers-action-list');
-    const selectionList = () => document.querySelector('#teachers-list > .teachers-selection-list');
+    const teacherRows = () => Array.from(document.querySelectorAll('#teachers-action-list .teacher-row-wrapper[data-id]'));
 
     const setTeacherPrimaryLabel = (label) => {
       const button = primaryButton();
@@ -66,35 +67,26 @@
     };
 
     const selectedTeacherIds = () => {
-      const list = selectionList();
-      if (!list) return [];
-
-      return Array.from(list.querySelectorAll('m3e-list-option[data-id]'))
-        .filter(option => option.style.display !== 'none')
-        .filter(option => option.selected || option.hasAttribute('selected') || option.getAttribute('aria-selected') === 'true')
-        .map(option => option.getAttribute('data-id'))
+      return teacherRows()
+        .filter(row => row.style.display !== 'none')
+        .filter(row => row.classList.contains('teacher-delete-selected'))
+        .map(row => row.getAttribute('data-id'))
         .filter(Boolean)
         .filter((id, index, ids) => ids.indexOf(id) === index);
     };
 
     const selectableTeacherCount = () => {
-      const list = selectionList();
-      if (!list) return 0;
-
-      return Array.from(list.querySelectorAll('m3e-list-option[data-id]'))
-        .filter(option => option.style.display !== 'none')
+      return teacherRows()
+        .filter(row => row.style.display !== 'none')
         .length;
     };
 
     const syncTeacherCheckboxes = () => {
-      const list = selectionList();
-      if (!list) return;
-
-      list.querySelectorAll('m3e-list-option[data-id]').forEach(option => {
-        const checkbox = option.querySelector('m3e-checkbox');
+      teacherRows().forEach(row => {
+        const checkbox = row.querySelector('.teacher-delete-checkbox');
         if (!checkbox) return;
 
-        const selected = option.selected || option.hasAttribute('selected') || option.getAttribute('aria-selected') === 'true';
+        const selected = row.classList.contains('teacher-delete-selected');
         checkbox.checked = selected;
         if (selected) {
           checkbox.setAttribute('checked', '');
@@ -105,13 +97,8 @@
     };
 
     const clearTeacherSelection = () => {
-      const list = selectionList();
-      if (!list) return;
-
-      list.querySelectorAll('m3e-list-option').forEach(option => {
-        option.selected = false;
-        option.removeAttribute('selected');
-        option.removeAttribute('aria-selected');
+      teacherRows().forEach(row => {
+        row.classList.remove('teacher-delete-selected');
       });
       syncTeacherCheckboxes();
     };
@@ -128,14 +115,25 @@
       );
     };
 
+    const hasRequiredTeacherFields = (form) => {
+      const lastName = (form.querySelector('input[name="lastName"]')?.value || '').trim();
+      const firstName = (form.querySelector('input[name="firstName"]')?.value || '').trim();
+      return lastName.length > 0 && firstName.length > 0;
+    };
+
+    const canSubmitTeacherForm = (form) => {
+      if (!hasRequiredTeacherFields(form)) return false;
+      return form.dataset.newRecord === 'true' || isTeacherFormChanged(form);
+    };
+
     const updateTeacherSaveButtons = () => {
       document.querySelectorAll('.teacher-edit-form').forEach(form => {
         const saveButton = form.querySelector('.teacher-save-button');
         if (!saveButton) return;
 
-        const changed = isTeacherFormChanged(form);
-        saveButton.disabled = !changed;
-        if (changed) {
+        const canSubmit = canSubmitTeacherForm(form);
+        saveButton.disabled = !canSubmit;
+        if (canSubmit) {
           saveButton.removeAttribute('disabled');
         } else {
           saveButton.setAttribute('disabled', '');
@@ -158,16 +156,35 @@
       }
     };
 
+    const applyTeacherDeleteModeState = () => {
+      const list = document.getElementById('teachers-list');
+      if (list) list.classList.toggle('teacher-delete-mode', teacherDeleteMode);
+
+      teacherRows().forEach(row => {
+        const panel = row.querySelector('m3e-expansion-panel.teacher-panel');
+        if (!panel) return;
+
+        panel.disabled = teacherDeleteMode;
+        if (teacherDeleteMode) {
+          panel.setAttribute('disabled', '');
+          panel.open = false;
+          panel.removeAttribute('open');
+        } else {
+          panel.removeAttribute('disabled');
+          row.classList.remove('teacher-delete-selected');
+        }
+      });
+
+      syncTeacherCheckboxes();
+    };
+
     const updateTeacherPrimaryAction = () => {
       const button = primaryButton();
       const icon = primaryIcon();
       if (!button || !icon) return;
 
-      const actions = actionList();
-      const selections = selectionList();
-      if (actions) actions.hidden = teacherDeleteMode;
-      if (selections) selections.hidden = !teacherDeleteMode;
       updateTeachersMenuMode();
+      applyTeacherDeleteModeState();
       syncTeacherCheckboxes();
 
       if (!teacherDeleteMode) {
@@ -231,7 +248,7 @@
       const input = document.getElementById('teacher-search-input');
       const query = input ? input.value.toLowerCase().trim() : '';
 
-      document.querySelectorAll('#teachers-list > .teachers-action-list, #teachers-list > .teachers-selection-list').forEach(container => {
+      document.querySelectorAll('#teachers-list > .teachers-action-list').forEach(container => {
         Array.from(container.children).forEach(child => {
           const tag = child.tagName.toLowerCase();
           if (tag === 'm3e-divider') {
@@ -239,7 +256,7 @@
             return;
           }
 
-          const searchable = tag === 'm3e-expansion-panel' || tag === 'm3e-list-option';
+          const searchable = child.classList.contains('teacher-row-wrapper');
           if (!searchable) return;
 
           const matches = child.textContent.toLowerCase().includes(query);
@@ -249,6 +266,10 @@
             if (previous && previous.tagName.toLowerCase() === 'm3e-divider') {
               previous.style.display = '';
             }
+            const next = child.nextElementSibling;
+            if (next && next.tagName.toLowerCase() === 'm3e-divider') {
+              next.style.display = '';
+            }
           }
         });
       });
@@ -256,6 +277,72 @@
       syncTeacherCheckboxes();
       updateTeacherPrimaryAction();
     };
+
+    const reloadTeachersBySearch = () => {
+      window.clearTimeout(teacherSearchTimer);
+      teacherSearchTimer = window.setTimeout(() => {
+        const input = document.getElementById('teacher-search-input');
+        const query = input ? input.value.trim() : '';
+        const url = query ? '/teachers/list?q=' + encodeURIComponent(query) : '/teachers/list';
+        htmx.ajax('GET', url, { target: '#teachers-list-container', swap: 'outerHTML' });
+      }, 180);
+    };
+
+    document.addEventListener('click', function(e) {
+      const editButton = e.target.closest('.teacher-edit-button');
+      if (!editButton) return;
+      if (teacherDeleteMode) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+      const target = document.getElementById(editButton.dataset.targetId);
+      if (target) {
+        htmx.ajax('GET', editButton.dataset.editUrl, { target: target, swap: 'outerHTML' });
+      }
+    }, true);
+
+    document.addEventListener('opening', function(e) {
+      const panel = e.target.closest && e.target.closest('m3e-expansion-panel.teacher-panel');
+      const row = panel && panel.closest('.teacher-row-wrapper[data-id]');
+      if (teacherDeleteMode) {
+        if (e.cancelable) e.preventDefault();
+        if (panel) {
+          panel.open = false;
+          panel.removeAttribute('open');
+        }
+        return;
+      }
+      if (!panel || !row || panel.querySelector('.teacher-edit-form')) return;
+
+      if (e.cancelable) e.preventDefault();
+      panel.open = false;
+      panel.removeAttribute('open');
+
+      htmx.ajax('GET', '/teachers/' + row.dataset.id + '/edit', { target: row, swap: 'outerHTML' });
+    }, true);
+
+    document.addEventListener('click', function(e) {
+      const checkbox = e.target.closest('.teacher-delete-checkbox');
+      const row = checkbox && checkbox.closest('.teacher-row-wrapper[data-id]');
+      if (!row || !teacherDeleteMode) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      const selected = !row.classList.contains('teacher-delete-selected');
+      if (selected) {
+        row.classList.add('teacher-delete-selected');
+      } else {
+        row.classList.remove('teacher-delete-selected');
+      }
+
+      syncTeacherCheckboxes();
+      updateTeacherPrimaryAction();
+    }, true);
 
     document.addEventListener('click', function(e) {
       const primary = e.target.closest('#teacher-primary-action');
@@ -280,18 +367,6 @@
         return;
       }
 
-      const editButton = e.target.closest('.teacher-edit-button');
-      if (editButton) {
-        const panel = editButton.closest('m3e-expansion-panel');
-        if (panel) {
-          panel.open = true;
-          panel.setAttribute('open', '');
-          const firstInput = panel.querySelector('input[name="lastName"]');
-          if (firstInput) window.setTimeout(() => firstInput.focus(), 0);
-        }
-        return;
-      }
-
       const saveButton = e.target.closest('.teacher-save-button');
       if (saveButton) {
         if (saveButton.disabled || saveButton.hasAttribute('disabled')) return;
@@ -299,37 +374,19 @@
         if (form) form.requestSubmit();
         return;
       }
-
-      const listOption = e.target.closest('m3e-list-option');
-      if (listOption && teacherDeleteMode) {
-        window.setTimeout(() => {
-          syncTeacherCheckboxes();
-          updateTeacherPrimaryAction();
-        }, 0);
-      }
     });
 
     document.addEventListener('input', function(e) {
       if (e.target.id === 'teacher-search-input') {
-        filterTeachers();
+        reloadTeachersBySearch();
       } else if (e.target.closest && e.target.closest('.teacher-edit-form')) {
         updateTeacherSaveButtons();
-      } else if (e.target.closest && e.target.closest('m3e-selection-list')) {
-        syncTeacherCheckboxes();
-        updateTeacherPrimaryAction();
-      }
-    });
-
-    document.addEventListener('change', function(e) {
-      if (e.target.closest && e.target.closest('m3e-selection-list')) {
-        syncTeacherCheckboxes();
-        updateTeacherPrimaryAction();
       }
     });
 
     document.addEventListener('submit', function(e) {
       const form = e.target.closest && e.target.closest('.teacher-edit-form');
-      if (form && !isTeacherFormChanged(form)) {
+      if (form && !canSubmitTeacherForm(form)) {
         e.preventDefault();
         e.stopPropagation();
       }
@@ -340,7 +397,7 @@
       if (searchBar) {
         const input = document.getElementById('teacher-search-input');
         if (input) input.value = '';
-        filterTeachers();
+        reloadTeachersBySearch();
       }
     });
 
@@ -352,7 +409,20 @@
           updateTeacherPrimaryAction();
         }
         filterTeachers();
+      } else if (e.detail.target.closest && e.detail.target.closest('#teachers-action-list')) {
+        filterTeachers();
+        applyTeacherDeleteModeState();
+        updateTeacherSaveButtons();
       }
+    });
+
+    document.addEventListener('htmx:afterSettle', function(e) {
+      const requestPath = e.detail.requestConfig && e.detail.requestConfig.path;
+      if (!teacherDeleteMode || !requestPath || !requestPath.startsWith('/teachers/chunk')) return;
+
+      filterTeachers();
+      applyTeacherDeleteModeState();
+      updateTeacherSaveButtons();
     });
 
     updateTeacherPrimaryAction();

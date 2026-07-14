@@ -65,12 +65,33 @@
       hx-swap="outerHTML"
       style="display: none;"></form>
 
+<m3e-dialog id="schedule-approve-dialog" dismissible>
+  <span slot="header">Одобрить расписание?</span>
+  <div id="schedule-approve-dialog-body">
+    После одобрения, расписание будет замещено новым на сервере, это действие нельзя будет отменить
+  </div>
+  <div id="schedule-approve-dialog-actions" slot="actions" end>
+    <m3e-button variant="outlined">
+      <m3e-dialog-action return-value="cancel">Отмена</m3e-dialog-action>
+    </m3e-button>
+    <m3e-button id="schedule-approve-confirm-button" variant="filled" autofocus>
+      Продолжить
+    </m3e-button>
+  </div>
+</m3e-dialog>
+
 <m3e-split-pane id="schedule-split-pane" class="schedule-workspace" value="100" min="45" max="100">
   <m3e-content-pane class="schedule-pane" slot="start">
     <#include "/schedule/schedule_list_container.html">
   </m3e-content-pane>
   <div id="correction-pane-container" slot="end" hidden></div>
 </m3e-split-pane>
+
+<div class="m3-snackbar-container schedule-approval-snackbar-container"
+     hx-ext="sse"
+     sse-connect="/schedule/approve/sse">
+  <div id="schedule-approval-snackbar" sse-swap="ScheduleApprovalSnackbar" hx-swap="innerHTML"></div>
+</div>
 
 <script>
   (function() {
@@ -94,6 +115,48 @@
     const withCurrentFilter = (path) => {
       const query = currentFilterQuery();
       return query ? path + '?' + query : path;
+    };
+    const updateApproveButtonVisibility = () => {
+      const buttonWrapper = document.getElementById('schedule-approve-button-wrapper');
+      const list = document.getElementById('schedule-list');
+      if (!buttonWrapper || !list) return;
+
+      buttonWrapper.hidden = list.dataset.allActiveFilesValid !== 'true';
+    };
+    const setScheduleApprovalDisabled = (disabled) => {
+      document.querySelectorAll('.schedule-header, #schedule-split-pane').forEach(element => {
+        element.classList.toggle('schedule-approval-disabled', disabled);
+        if ('inert' in element) {
+          element.inert = disabled;
+        }
+      });
+    };
+    const renderApproveProgressDialog = () => {
+      const body = document.getElementById('schedule-approve-dialog-body');
+      const actions = document.getElementById('schedule-approve-dialog-actions');
+      if (body) {
+        body.innerHTML = '<div class="schedule-approve-progress-content"><m3e-linear-progress-indicator variant="wavy" value="0"></m3e-linear-progress-indicator><span>Файлы отправляются, можно закрыть страницу.</span></div>';
+      }
+      if (actions) {
+        actions.innerHTML = '<m3e-button variant="outlined"><m3e-dialog-action return-value="close">Закрыть</m3e-dialog-action></m3e-button>';
+      }
+    };
+    const applyApprovalStateFromSnackbar = () => {
+      const snackbar = document.querySelector('#schedule-approval-snackbar .m3-snackbar[data-approval-status]');
+      if (!snackbar) return;
+
+      const status = snackbar.dataset.approvalStatus;
+      const progressValue = snackbar.dataset.approvalProgress || '0';
+      document.querySelectorAll('#schedule-approve-dialog-body m3e-linear-progress-indicator').forEach(progress => {
+        progress.value = Number(progressValue);
+        progress.setAttribute('value', progressValue);
+      });
+      document.dispatchEvent(new CustomEvent('schedule-approval-state', {
+        detail: {
+          status: status,
+          progress: Number(progressValue)
+        }
+      }));
     };
 
     const setPrimaryButtonLabel = (label) => {
@@ -333,6 +396,17 @@
         return;
       }
 
+      const approveConfirmButton = e.target.closest('#schedule-approve-confirm-button');
+      if (approveConfirmButton) {
+        approveConfirmButton.disabled = true;
+        approveConfirmButton.setAttribute('disabled', '');
+        renderApproveProgressDialog();
+        setScheduleApprovalDisabled(true);
+        fetch('/schedule/approve', { method: 'POST' })
+          .catch(() => setScheduleApprovalDisabled(false));
+        return;
+      }
+
       const cancelDeleteMenuItem = e.target.closest('#cancel-delete-mode-menu-item');
       if (cancelDeleteMenuItem && cancelDeleteMenuItem.closest('#menu')) {
         exitDeleteMode();
@@ -482,11 +556,18 @@
     };
 
     filterFiles();
+    updateApproveButtonVisibility();
     startProcessingAnimation();
 
     document.addEventListener('htmx:afterSwap', function(e) {
+      if (e.detail.target.id === 'schedule-approval-snackbar') {
+        applyApprovalStateFromSnackbar();
+        return;
+      }
+
       if (e.detail.target.id === 'schedule-list-container' || e.detail.target.id === 'schedule-list') {
         filterFiles();
+        updateApproveButtonVisibility();
         startProcessingAnimation();
         const requestElement = e.detail.requestConfig && e.detail.requestConfig.elt;
         if (isDeletedFilterSelected()) {
@@ -590,6 +671,15 @@
       if (restoreButton) {
         restoreButton.disabled = false;
         restoreButton.removeAttribute('disabled');
+      }
+    });
+
+    document.addEventListener('schedule-approval-state', function(e) {
+      const status = e.detail && e.detail.status;
+      if (status === 'RUNNING') {
+        setScheduleApprovalDisabled(true);
+      } else if (status === 'SUCCESS' || status === 'ERROR' || status === 'IDLE') {
+        setScheduleApprovalDisabled(false);
       }
     });
 

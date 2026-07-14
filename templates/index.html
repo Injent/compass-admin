@@ -23,6 +23,7 @@
 <body>
     <m3e-theme strong-focus>
         <div class="app-layout">
+            <div class="nav-column">
             <m3e-nav-rail id="nav-rail">
                 <m3e-icon-button toggle>
                     <m3e-icon name="menu" variant="rounded"></m3e-icon>
@@ -39,7 +40,21 @@
                     <m3e-icon slot="selected" name="co_present" variant="rounded"></m3e-icon>
                     <span class="nav-item-label">Преподаватели</span>
                 </m3e-nav-item>
+                <#if canAccessConfig>
+                <m3e-nav-item data-route="/config" hx-get="/config" hx-target="#content-area" hx-trigger="click" hx-push-url="/config">
+                    <m3e-icon slot="icon" name="call_merge" variant="rounded"></m3e-icon>
+                    <m3e-icon slot="selected" name="call_merge" variant="rounded"></m3e-icon>
+                    <span class="nav-item-label">Конфиг</span>
+                </m3e-nav-item>
+                </#if>
             </m3e-nav-rail>
+            <div class="nav-column-spacer"></div>
+            <form class="logout-form logout-form-outside" method="post" action="/auth/logout">
+                <m3e-icon-button type="submit" aria-label="Выход">
+                    <m3e-icon name="logout"></m3e-icon>
+                </m3e-icon-button>
+            </form>
+            </div>
 
             <main class="app-content">
                 <div id="content-area" hx-get="${initialContentUrl}" hx-trigger="load" hx-swap="innerHTML" hx-replace-url="${initialContentUrl}">
@@ -85,6 +100,9 @@
             }
             if (cleanPath.startsWith('/teachers')) {
                 return '/teachers';
+            }
+            if (cleanPath.startsWith('/config')) {
+                return '/config';
             }
 
             return null;

@@ -6,6 +6,9 @@ import io.ktor.server.freemarker.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import org.koin.ktor.ext.get
+import ru.injent.service.auth.AuthService
+import ru.injent.service.config.Access
 import java.io.File
 
 fun Routing.indexPage() {
@@ -15,13 +18,20 @@ fun Routing.indexPage() {
 }
 
 fun indexModel(call: ApplicationCall): Map<String, Any> =
-    mapOf(
-        "initialContentUrl" to call.initialContentUrl()
-    )
+    call.application.get<AuthService>().let { authService ->
+        val canAccessConfig = authService.authenticate(call)?.role == Access.Role.SUPERUSER
+        mapOf(
+            "initialContentUrl" to call.initialContentUrl(canAccessConfig),
+            "canAccessConfig" to canAccessConfig,
+        )
+    }
 
-private fun ApplicationCall.initialContentUrl(): String {
+private fun ApplicationCall.initialContentUrl(canAccessConfig: Boolean): String {
     if (request.path().startsWith("/teachers")) {
         return "/teachers"
+    }
+    if (canAccessConfig && request.path().startsWith("/config")) {
+        return "/config"
     }
 
     val filter = (request.queryParameters["f"] ?: request.queryParameters["filter"] ?: "all")

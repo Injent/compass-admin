@@ -1,0 +1,15 @@
+<#list teachers as teacher>
+  <#assign teacherNumber = teachersOffset + teacher_index + 1>
+  <#include "/teachers/teacher_panel.html">
+  <m3e-divider></m3e-divider>
+</#list>
+
+<#if hasMoreTeachers>
+  <div id="teachers-action-lazy-sentinel"
+       class="teachers-lazy-sentinel"
+       hx-get="/teachers/chunk?offset=${nextTeachersOffset}<#if teacherQuery?has_content>&q=${teacherQuery?url('UTF-8')}</#if>"
+       hx-trigger="intersect once threshold:0.01"
+       hx-swap="outerHTML">
+    <m3e-progress-circular indeterminate></m3e-progress-circular>
+  </div>
+</#if>

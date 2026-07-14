@@ -1,0 +1,499 @@
+<div class="schedule-header">
+  <m3e-search-bar id="config-search-bar" class="config-search-bar" disabled>
+    <m3e-icon name="search" slot="leading"></m3e-icon>
+    <input id="config-search-input" slot="input" placeholder="Поиск настроек" disabled />
+  </m3e-search-bar>
+
+  <div class="actions-wrapper">
+    <m3e-split-button>
+      <m3e-button slot="leading-button" id="config-save-button" disabled>
+        <m3e-icon slot="icon" id="config-save-action-icon" name="save" variant="rounded"></m3e-icon>
+        Сохранить
+      </m3e-button>
+      <m3e-icon-button slot="trailing-button">
+        <m3e-icon name="keyboard_arrow_down"></m3e-icon>
+        <m3e-menu-trigger for="config-menu"></m3e-menu-trigger>
+      </m3e-icon-button>
+    </m3e-split-button>
+
+    <m3e-menu id="config-menu" position-x="before">
+      <m3e-menu-item id="config-reset-menu-item">
+        <m3e-icon slot="icon" name="restart_alt" variant="rounded"></m3e-icon>
+        Вернуть к исходному
+      </m3e-menu-item>
+    </m3e-menu>
+  </div>
+</div>
+
+<m3e-content-pane class="schedule-pane config-pane">
+  <div id="config-container">
+    <#if error?? && error?has_content>
+      <div class="config-message config-message-error">
+        <m3e-icon name="error" variant="rounded"></m3e-icon>
+        <span>${error?html}</span>
+      </div>
+    </#if>
+
+    <#if saved>
+      <div class="config-message config-message-success">
+        <m3e-icon name="check_circle" variant="rounded"></m3e-icon>
+        <span>Настройки сохранены</span>
+      </div>
+    </#if>
+
+    <#if remoteConfig??>
+      <form id="remote-config-form"
+            hx-post="/config"
+            hx-target="#content-area"
+            hx-swap="innerHTML">
+        <input type="hidden" name="swapWeeks" value="${remoteConfig.swapWeeks?c}" />
+        <input type="hidden" name="lastResetTimestamp" value="${remoteConfig.lastResetTimestamp?html}" />
+        <div id="teacher-warning-hidden-fields"></div>
+
+        <m3e-list class="config-list">
+          <m3e-heading class="config-category-heading" variant="label" size="large">Расписание</m3e-heading>
+
+          <div class="config-row">
+            <div class="config-main-field">
+              <m3e-icon name="event" variant="rounded"></m3e-icon>
+              <div class="config-field">
+                <m3e-form-field variant="outlined" class="density-3" hide-subscript="always">
+                  <label slot="label" for="term-start-date">Дата начала семестра</label>
+                  <input autocomplete="off"
+                         id="term-start-date"
+                         class="config-edit-input config-date-input"
+                         name="termStartDate"
+                         required
+                         pattern="\d{4}-\d{2}-\d{2}"
+                         data-validation="date"
+                         value="${remoteConfig.termStartDate?html}" />
+                  <m3e-icon-button slot="suffix">
+                    <m3e-icon name="calendar_today"></m3e-icon>
+                    <m3e-datepicker-toggle for="term-start-date-picker"></m3e-datepicker-toggle>
+                  </m3e-icon-button>
+                  <span slot="hint">YYYY-MM-DD</span>
+                </m3e-form-field>
+                <m3e-datepicker id="term-start-date-picker"></m3e-datepicker>
+              </div>
+            </div>
+          </div>
+
+          <m3e-divider></m3e-divider>
+
+          <div class="config-row">
+            <div class="config-main-field">
+              <m3e-icon name="warning" variant="rounded"></m3e-icon>
+              <div class="config-field config-chip-field">
+                <m3e-form-field variant="outlined" hide-subscript="always" style="margin-top: 8px">
+                  <label slot="label" for="teacher-warning-range-input">Периоды предупреждений</label>
+                  <m3e-input-chip-set id="teacher-warning-chip-set"
+                                      class="config-edit-chip-set"
+                                      aria-label="Периоды предупреждений"
+                                      required>
+                    <#list remoteConfig.teacherSearchWarningDateRanges as range>
+                      <m3e-input-chip removable value="${range[0]?html}..${range[1]?html}">${range[0]?html}..${range[1]?html}</m3e-input-chip>
+                    </#list>
+                    <input id="teacher-warning-range-input"
+                           slot="input"
+                           placeholder="MM-DD..MM-DD" />
+                  </m3e-input-chip-set>
+                  <span slot="hint">Например: 12-08..02-07</span>
+                </m3e-form-field>
+              </div>
+            </div>
+          </div>
+
+          <m3e-heading class="config-category-heading" variant="label" size="large">Публикация приложения</m3e-heading>
+
+          <div class="config-row">
+            <div class="config-main-field">
+              <m3e-icon name="tag" variant="rounded"></m3e-icon>
+              <div class="config-field">
+                <m3e-form-field variant="outlined" class="density-3" hide-subscript="always">
+                  <label slot="label" for="version-code">Код версии</label>
+                  <input id="version-code"
+                         class="config-edit-input"
+                         name="versionCode"
+                         type="number"
+                         step="1"
+                         min="0"
+                         required
+                         value="${remoteConfig.versionCode?c}" />
+                </m3e-form-field>
+              </div>
+            </div>
+          </div>
+
+          <m3e-divider></m3e-divider>
+
+          <div class="config-row">
+            <div class="config-main-field">
+              <m3e-icon name="download" variant="rounded"></m3e-icon>
+              <div class="config-field">
+                <m3e-form-field variant="outlined" class="density-3" hide-subscript="always">
+                  <label slot="label" for="download-url">Ссылка загрузки</label>
+                  <input id="download-url"
+                         class="config-edit-input config-url-input"
+                         name="downloadUrl"
+                         type="url"
+                         required
+                         data-validation="url"
+                         value="${remoteConfig.downloadUrl?html}" />
+                </m3e-form-field>
+              </div>
+            </div>
+          </div>
+
+          <m3e-heading class="config-category-heading" variant="label" size="large">Поддержка</m3e-heading>
+
+          <div class="config-row config-support-row">
+            <div class="config-main-field">
+              <m3e-icon name="support_agent" variant="rounded"></m3e-icon>
+              <div class="config-field">
+                <input type="hidden" name="vkLinkSupportEnabled" value="${remoteConfig.vkLinkSupport?has_content?c}" />
+                <m3e-form-field variant="outlined" class="density-3" hide-subscript="always">
+                  <label slot="label" for="vk-link-support">VK</label>
+                  <input id="vk-link-support"
+                         class="config-edit-input config-url-input config-support-link"
+                         name="vkLinkSupport"
+                         type="url"
+                         data-validation="url"
+                         value="${(remoteConfig.vkLinkSupport!'')?html}"
+                         <#if !remoteConfig.vkLinkSupport?has_content>disabled</#if> />
+                </m3e-form-field>
+              </div>
+            </div>
+            <m3e-switch class="config-support-switch" data-link="vkLinkSupport" icons="both" <#if remoteConfig.vkLinkSupport?has_content>checked</#if>></m3e-switch>
+          </div>
+
+          <m3e-divider></m3e-divider>
+
+          <div class="config-row config-support-row">
+            <div class="config-main-field">
+              <m3e-icon name="support_agent" variant="rounded"></m3e-icon>
+              <div class="config-field">
+                <input type="hidden" name="maxLinkSupportEnabled" value="${remoteConfig.maxLinkSupport?has_content?c}" />
+                <m3e-form-field variant="outlined" class="density-3" hide-subscript="always">
+                  <label slot="label" for="max-link-support">MAX</label>
+                  <input id="max-link-support"
+                         class="config-edit-input config-url-input config-support-link"
+                         name="maxLinkSupport"
+                         type="url"
+                         data-validation="url"
+                         value="${(remoteConfig.maxLinkSupport!'')?html}"
+                         <#if !remoteConfig.maxLinkSupport?has_content>disabled</#if> />
+                </m3e-form-field>
+              </div>
+            </div>
+            <m3e-switch class="config-support-switch" data-link="maxLinkSupport" icons="both" <#if remoteConfig.maxLinkSupport?has_content>checked</#if>></m3e-switch>
+          </div>
+
+          <m3e-divider></m3e-divider>
+
+          <div class="config-row config-support-row">
+            <div class="config-main-field">
+              <m3e-icon name="support_agent" variant="rounded"></m3e-icon>
+              <div class="config-field">
+                <input type="hidden" name="telegramLinkSupportEnabled" value="${remoteConfig.telegramLinkSupport?has_content?c}" />
+                <m3e-form-field variant="outlined" class="density-3" hide-subscript="always">
+                  <label slot="label" for="telegram-link-support">Telegram</label>
+                  <input id="telegram-link-support"
+                         class="config-edit-input config-url-input config-support-link"
+                         name="telegramLinkSupport"
+                         type="url"
+                         data-validation="url"
+                         value="${(remoteConfig.telegramLinkSupport!'')?html}"
+                         <#if !remoteConfig.telegramLinkSupport?has_content>disabled</#if> />
+                </m3e-form-field>
+              </div>
+            </div>
+            <m3e-switch class="config-support-switch" data-link="telegramLinkSupport" icons="both" <#if remoteConfig.telegramLinkSupport?has_content>checked</#if>></m3e-switch>
+          </div>
+        </m3e-list>
+      </form>
+    <#else>
+      <div class="config-empty-state">
+        <m3e-icon name="settings_alert" variant="rounded"></m3e-icon>
+        <span>Не удалось загрузить настройки</span>
+      </div>
+    </#if>
+  </div>
+</m3e-content-pane>
+
+<script>
+  (function() {
+    const form = document.getElementById('remote-config-form');
+    const saveButton = document.getElementById('config-save-button');
+    const chipSet = document.getElementById('teacher-warning-chip-set');
+    const chipInput = document.getElementById('teacher-warning-range-input');
+    const hiddenRanges = document.getElementById('teacher-warning-hidden-fields');
+    if (!form || !saveButton) return;
+
+    const initialState = JSON.stringify(readState());
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    const rangePattern = /^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\.\.(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+
+    function editableInputs() {
+      return Array.from(form.querySelectorAll('.config-edit-input'));
+    }
+
+    function enabledSupportSwitch(control) {
+      return control.checked || control.selected || control.hasAttribute('checked') || control.hasAttribute('selected');
+    }
+
+    function chipValues() {
+      if (!chipSet) return [];
+      const values = Array.isArray(chipSet.value) ? chipSet.value : null;
+      if (values) return values.map(String).filter(Boolean);
+
+      return Array.from(chipSet.querySelectorAll('m3e-input-chip'))
+        .map(chip => chip.value || chip.getAttribute('value') || chip.textContent.trim())
+        .filter(Boolean);
+    }
+
+    function readState() {
+      const fields = {};
+      editableInputs().forEach(input => {
+        fields[input.name || input.id] = input.disabled ? null : input.value;
+      });
+      form.querySelectorAll('.config-support-switch').forEach(control => {
+        fields[control.dataset.link + 'Enabled'] = enabledSupportSwitch(control);
+      });
+      fields.teacherSearchWarningDateRanges = chipValues();
+      return fields;
+    }
+
+    function isStrictDate(value) {
+      if (!datePattern.test(value)) return false;
+      const date = new Date(value + 'T00:00:00Z');
+      return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+    }
+
+    function isStrictRange(value) {
+      if (!rangePattern.test(value)) return false;
+      return value.split('..').every(part => {
+        const month = Number(part.slice(0, 2));
+        const day = Number(part.slice(3, 5));
+        const date = new Date(Date.UTC(2024, month - 1, day));
+        return date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+      });
+    }
+
+    function isHttpUrl(value) {
+      try {
+        const url = new URL(value);
+        return url.protocol === 'http:' || url.protocol === 'https:';
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function validateFields() {
+      let valid = true;
+
+      editableInputs().forEach(input => {
+        input.setCustomValidity('');
+        if (input.disabled) return;
+
+        if (input.dataset.validation === 'date' && !isStrictDate(input.value.trim())) {
+          input.setCustomValidity('Введите дату в формате YYYY-MM-DD');
+          valid = false;
+        } else if (input.dataset.validation === 'url' && !isHttpUrl(input.value.trim())) {
+          input.setCustomValidity('Введите корректный URL');
+          valid = false;
+        } else if (!input.checkValidity()) {
+          valid = false;
+        }
+      });
+
+      const ranges = chipValues();
+      if (chipSet) {
+        const rangesValid = ranges.length > 0 && ranges.every(isStrictRange);
+        setChipSetValidity(rangesValid ? '' : 'Добавьте диапазоны в формате MM-DD..MM-DD');
+        if (!rangesValid) valid = false;
+      }
+
+      return valid;
+    }
+
+    function updateSubscripts() {
+      form.querySelectorAll('m3e-form-field').forEach(field => {
+        const control = field.querySelector('input, m3e-input-chip-set');
+        if (!control) return;
+
+        const focused = field.contains(document.activeElement);
+        const invalid = control.willValidate &&
+          !control.disabled &&
+          typeof control.checkValidity === 'function' &&
+          !control.checkValidity();
+        field.setAttribute('hide-subscript', focused || invalid ? 'auto' : 'always');
+      });
+    }
+
+    function setChipSetValidity(message) {
+      if (!chipSet || typeof chipSet.setCustomValidity !== 'function') return;
+      chipSet.setCustomValidity(message);
+    }
+
+    function syncHiddenRanges() {
+      if (!hiddenRanges) return;
+      hiddenRanges.innerHTML = '';
+      chipValues().forEach(value => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'teacherSearchWarningDateRanges';
+        input.value = value;
+        hiddenRanges.appendChild(input);
+      });
+    }
+
+    function updateSaveButton() {
+      const changed = JSON.stringify(readState()) !== initialState;
+      const valid = validateFields();
+      updateSubscripts();
+      saveButton.disabled = !changed || !valid;
+      if (changed && valid) {
+        saveButton.removeAttribute('disabled');
+      } else {
+        saveButton.setAttribute('disabled', '');
+      }
+    }
+
+    function addRangeChip(value) {
+      const normalized = value.trim();
+      if (!isStrictRange(normalized)) {
+        chipInput.setCustomValidity('Формат: MM-DD..MM-DD');
+        chipInput.reportValidity();
+        return false;
+      }
+      if (chipValues().includes(normalized)) {
+        chipInput.value = '';
+        return true;
+      }
+
+      const chip = document.createElement('m3e-input-chip');
+      chip.value = normalized;
+      chip.setAttribute('value', normalized);
+      chip.textContent = normalized;
+      chipSet.insertBefore(chip, chipInput);
+      chipInput.value = '';
+      chipInput.setCustomValidity('');
+      syncHiddenRanges();
+      updateSaveButton();
+      return true;
+    }
+
+    function syncSupport(control) {
+      const name = control.dataset.link;
+      const enabled = enabledSupportSwitch(control);
+      const input = form.querySelector('input[name="' + name + '"]');
+      const enabledInput = form.querySelector('input[name="' + name + 'Enabled"]');
+      if (!input || !enabledInput) return;
+
+      input.disabled = !enabled;
+      input.required = enabled;
+      enabledInput.value = enabled ? 'true' : 'false';
+      if (!enabled) input.setCustomValidity('');
+    }
+
+    document.addEventListener('input', function(e) {
+      if (e.target === chipInput) {
+        chipInput.setCustomValidity('');
+      }
+      if (e.target.closest && e.target.closest('#remote-config-form')) {
+        updateSaveButton();
+      }
+    });
+
+    document.addEventListener('focusin', function(e) {
+      if (e.target.closest && e.target.closest('#remote-config-form')) {
+        updateSubscripts();
+      }
+    });
+
+    document.addEventListener('focusout', function(e) {
+      if (e.target.closest && e.target.closest('#remote-config-form')) {
+        window.setTimeout(updateSubscripts, 0);
+      }
+    });
+
+    document.addEventListener('change', function(e) {
+      const supportSwitch = e.target.closest && e.target.closest('.config-support-switch');
+      if (supportSwitch) {
+        syncSupport(supportSwitch);
+      }
+      if (e.target.closest && e.target.closest('#remote-config-form')) {
+        syncHiddenRanges();
+        updateSaveButton();
+      }
+    });
+
+    document.addEventListener('click', function(e) {
+      const supportSwitch = e.target.closest && e.target.closest('.config-support-switch');
+      if (supportSwitch) {
+        window.setTimeout(() => {
+          syncSupport(supportSwitch);
+          updateSaveButton();
+        }, 0);
+        return;
+      }
+
+      const button = e.target.closest('#config-save-button');
+      if (!button) return;
+
+      syncHiddenRanges();
+      if (!validateFields()) {
+        form.reportValidity();
+        updateSaveButton();
+        return;
+      }
+      if (button.disabled || button.hasAttribute('disabled')) return;
+      form.requestSubmit();
+    });
+
+    document.addEventListener('click', function(e) {
+      const resetItem = e.target.closest('#config-reset-menu-item');
+      if (!resetItem) return;
+
+      htmx.ajax('GET', '/config', { target: '#content-area', swap: 'innerHTML' });
+    });
+
+    if (chipInput) {
+      chipInput.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter' && e.key !== ',') return;
+        e.preventDefault();
+        addRangeChip(chipInput.value);
+      });
+
+      chipInput.addEventListener('blur', function() {
+        if (chipInput.value.trim()) addRangeChip(chipInput.value);
+      });
+    }
+
+    if (chipSet) {
+      chipSet.addEventListener('change', function() {
+        syncHiddenRanges();
+        updateSaveButton();
+      });
+    }
+
+    document.addEventListener('htmx:beforeRequest', function(e) {
+      if (e.target.id === 'remote-config-form') {
+        syncHiddenRanges();
+        if (!validateFields()) {
+          e.preventDefault();
+          form.reportValidity();
+          updateSaveButton();
+          return;
+        }
+        saveButton.disabled = true;
+        saveButton.setAttribute('disabled', '');
+      }
+    });
+
+    form.querySelectorAll('.config-support-switch').forEach(syncSupport);
+    syncHiddenRanges();
+    updateSaveButton();
+    updateSubscripts();
+  })();
+</script>

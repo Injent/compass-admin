@@ -1,5 +1,8 @@
 package ru.injent.page
 
+import io.ktor.client.*
+import io.ktor.client.request.*
+import io.ktor.client.request.forms.*
 import io.ktor.http.*
 import io.ktor.http.content.*
 import io.ktor.server.application.*
@@ -9,14 +12,15 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.sse.*
 import io.ktor.utils.io.jvm.javaio.*
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onStart
+import io.ktor.utils.io.streams.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
 import ru.injent.dto.FileStatus
+import ru.injent.service.config.AppConfig
 import ru.injent.service.google.CellReplacement
 import ru.injent.service.google.NewGoogleService
 import ru.injent.service.google.SheetValidator
@@ -28,7 +32,12 @@ fun Routing.schedulePage(
     googleService: NewGoogleService,
     wordCorrectionService: WordCorrectionService,
     sheetValidators: Collection<SheetValidator>,
+    appConfig: AppConfig,
+    httpClient: HttpClient,
+    applicationScope: CoroutineScope,
 ) {
+    val approvalState = MutableStateFlow(ScheduleApprovalState.idle())
+
     get("/schedule") {
         if (!call.isHtmxRequest) {
             call.respond(FreeMarkerContent("index.html", indexModel(call)))
@@ -53,7 +62,12 @@ fun Routing.schedulePage(
     }
 
     post("/schedule/upload") {
-        val uploadResult = uploadFilesToFreeSlots(googleService, call.receiveMultipart())
+        val uploadResult = uploadFilesToFreeSlots(
+            googleService = googleService,
+            multipart = call.receiveMultipart(),
+            sheetValidators = sheetValidators,
+            applicationScope = applicationScope,
+        )
         call.respond(
             status = if (uploadResult.error == null) HttpStatusCode.OK else HttpStatusCode.BadRequest,
             message = FreeMarkerContent(
@@ -164,6 +178,41 @@ fun Routing.schedulePage(
             }
     }
 
+    post("/schedule/approve") {
+        if (approvalState.value.status == ScheduleApprovalStatus.RUNNING) {
+            call.respond(HttpStatusCode.Accepted)
+            return@post
+        }
+
+        approvalState.value = ScheduleApprovalState(
+            status = ScheduleApprovalStatus.RUNNING,
+            progress = 0,
+            message = "Файлы отправляются"
+        )
+
+        applicationScope.launch {
+            sendApprovedScheduleFiles(
+                googleService = googleService,
+                appConfig = appConfig,
+                httpClient = httpClient,
+                approvalState = approvalState
+            )
+        }
+
+        call.respond(HttpStatusCode.Accepted)
+    }
+
+    sse("/schedule/approve/sse") {
+        approvalState
+            .onStart { emit(approvalState.value) }
+            .collectLatest { state ->
+                send(
+                    data = renderTemplate("schedule/approval_snackbar.html", state.toModel()),
+                    event = "ScheduleApprovalSnackbar"
+                )
+            }
+    }
+
     get("/schedule/corrections/{fileId}") {
         val fileId = call.parameters["fileId"].orEmpty()
         call.respond(
@@ -213,6 +262,94 @@ fun Routing.schedulePage(
     }
 }
 
+private suspend fun sendApprovedScheduleFiles(
+    googleService: NewGoogleService,
+    appConfig: AppConfig,
+    httpClient: HttpClient,
+    approvalState: MutableStateFlow<ScheduleApprovalState>,
+) {
+    runCatching {
+        val files = googleService.files.value
+            .filter { file -> file.status != FileStatus.EMPTY }
+
+        require(files.isNotEmpty()) { "Нет файлов для отправки" }
+        require(files.all { file -> file.status == FileStatus.VALID }) { "Все файлы должны быть проверены без ошибок" }
+
+        approvalState.value = ScheduleApprovalState.running(10)
+        httpClient.post(appConfig.compassApiConfig.approveScheduleUrl()) {
+            header(HttpHeaders.Authorization, "Bearer ${appConfig.compassApiConfig.apiKey}")
+            setBody(
+                MultiPartFormDataContent(
+                    formData {
+                        files.forEach { file ->
+                            val fileName = file.name.ensureXlsxExtension()
+                            append(
+                                "files",
+                                InputProvider {
+                                    googleService.exportAsXlsx(file.fileId).asInput()
+                                },
+                                Headers.build {
+                                    append(HttpHeaders.ContentDisposition, multipartFileDisposition("files", fileName))
+                                    append(HttpHeaders.ContentType, XlsxContentType.toString())
+                                }
+                            )
+                        }
+                    }
+                )
+            )
+        }
+
+        approvalState.value = ScheduleApprovalState(
+            status = ScheduleApprovalStatus.SUCCESS,
+            progress = 100,
+            message = "Расписание отправлено"
+        )
+    }.onFailure { error ->
+        approvalState.value = ScheduleApprovalState(
+            status = ScheduleApprovalStatus.ERROR,
+            progress = approvalState.value.progress,
+            message = error.message ?: "Отправка расписания прервана"
+        )
+    }
+}
+
+private fun ru.injent.service.config.CompassApiConfig.approveScheduleUrl(): String =
+    host.trimEnd('/') + "/schedule"
+
+private fun multipartFileDisposition(name: String, fileName: String): String {
+    val fallback = fileName.replace(Regex("""[^\w.\- ]"""), "_")
+    val encoded = URLEncoder.encode(fileName, Charsets.UTF_8).replace("+", "%20")
+    return """form-data; name="$name"; filename="$fallback"; filename*=UTF-8''$encoded"""
+}
+
+private data class ScheduleApprovalState(
+    val status: ScheduleApprovalStatus,
+    val progress: Int,
+    val message: String? = null,
+) {
+    fun toModel(): Map<String, Any?> =
+        mapOf(
+            "status" to status.name,
+            "progress" to progress,
+            "message" to message
+        )
+
+    companion object {
+        fun idle(): ScheduleApprovalState =
+            ScheduleApprovalState(ScheduleApprovalStatus.IDLE, 0)
+
+        fun running(progress: Int): ScheduleApprovalState =
+            ScheduleApprovalState(ScheduleApprovalStatus.RUNNING, progress, "Файлы отправляются")
+    }
+}
+
+private enum class ScheduleApprovalStatus {
+    IDLE,
+    RUNNING,
+    SUCCESS,
+    ERROR,
+}
+
 private fun Parameters.toCellReplacements(): List<CellReplacement> {
     val rowIndexes = getAll("rowIdx").orEmpty()
     val colIndexes = getAll("colIdx").orEmpty()
@@ -234,7 +371,9 @@ private fun Parameters.toCellReplacements(): List<CellReplacement> {
 
 private suspend fun uploadFilesToFreeSlots(
     googleService: NewGoogleService,
-    multipart: MultiPartData
+    multipart: MultiPartData,
+    sheetValidators: Collection<SheetValidator>,
+    applicationScope: CoroutineScope,
 ): UploadResult {
     val freeFiles = googleService.files.value
         .filter { file -> file.status == FileStatus.EMPTY }
@@ -270,6 +409,9 @@ private suspend fun uploadFilesToFreeSlots(
                 appProperties[KEY_UPLOAD_TIME] = Clock.System.now().toEpochMilliseconds().toString()
                 appProperties[KEY_CAN_FIX_WITH_AI] = false.toString()
             }.getOrThrow()
+            applicationScope.launch {
+                googleService.test(target.fileId, sheetValidators)
+            }
             uploadedCount++
         } finally {
             part.release()
