@@ -8,6 +8,7 @@ googleDrive = "v3-rev20220815-2.0.0"
 googleSheets = "v4-rev20220927-2.0.0"
 kotlinxDatetime = "0.8.0"
 gigachat = "0.1.18"
+exposedBom = "1.3.1"
 
 [libraries]
 koin-ktor = { module = "io.insert-koin:koin-ktor", version.ref = "koin" }
@@ -19,6 +20,8 @@ google-drive = { module = "com.google.apis:google-api-services-drive", version.r
 google-sheets = { module = "com.google.apis:google-api-services-sheets", version.ref = "googleSheets" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime-jvm", version.ref = "kotlinxDatetime" }
 gigachat = { module = "chat.giga:gigachat-java", version.ref = "gigachat" }
+exposed-bom = { module = "org.jetbrains.exposed:exposed-bom", version.ref = "exposedBom" }
+exposed-core = { module = "org.jetbrains.exposed:exposed-core" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

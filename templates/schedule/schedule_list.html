@@ -35,7 +35,7 @@
   </div>
 </#macro>
 
-<div id="schedule-list" sse-swap="ScheduleListUpdate" hx-swap="outerHTML">
+<div id="schedule-list" data-has-unready-files="${hasUnreadyFiles?c}" sse-swap="ScheduleListUpdate" hx-swap="outerHTML">
   <style>
     @keyframes slow-spin {
       from { transform: rotate(0deg); }
@@ -62,39 +62,50 @@
           <m3e-heading variant="label" size="large">Дата изменения</m3e-heading>
           <m3e-heading variant="label" size="large">Дата создания</m3e-heading>
         </div>
-        <div class="correction-trailing-placeholder" slot="trailing"></div>
+        <div class="schedule-row-actions-placeholder" slot="trailing"></div>
       </m3e-list-action>
     </m3e-action-list>
+    <m3e-divider></m3e-divider>
 
     <m3e-action-list class="schedule-file-action-list">
       <#list files as file>
         <m3e-list-action data-status="${file.status}" data-id="${file.fileId?html}" data-name="${file.name?html}">
           <@fileRow file=file />
           <#if file.status == "EMPTY">
-            <m3e-button class="restore-file-button"
-                        variant="text"
-                        slot="trailing"
-                        hx-post="/schedule/restore/${file.fileId?html}"
-                        hx-target="#schedule-list"
-                        hx-swap="outerHTML">Восстановить</m3e-button>
-          <#elseif file.canFixWithAi>
-            <m3e-icon-button class="correction-open-button"
-                             slot="trailing"
-                             hx-get="/schedule/corrections/${file.fileId?html}"
-                             hx-target="#correction-pane-container"
-                             hx-swap="innerHTML">
-              <svg class="correction-open-icon" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 512 512" aria-hidden="true">
-                <path d="M0 0h512v512H0z" fill="none" />
-                <radialGradient id="SVGAklhae1G" cx="-80.789" cy="2.985" r="32" gradientTransform="rotate(18.683 -57.456 4644.03)scale(17.03 136.421)" gradientUnits="userSpaceOnUse">
-                  <stop offset=".067" stop-color="#9168c0" />
-                  <stop offset=".343" stop-color="#5684d1" />
-                  <stop offset=".672" stop-color="#1ba1e3" />
-                </radialGradient>
-                <path fill="url(#SVGAklhae1G)" d="M512 256.5c-137.5 8.4-247.1 118-255.5 255.5h-1C247.1 374.5 137.5 264.9 0 256.5v-1c137.5-8.4 247.1-118 255.5-255.5h1c8.4 137.5 118 247.1 255.5 255.5z" />
-              </svg>
-            </m3e-icon-button>
+            <div class="schedule-row-actions" slot="trailing">
+              <m3e-button class="restore-file-button"
+                          variant="text"
+                          hx-post="/schedule/restore/${file.fileId?html}<#if filter != "all">?f=${filter}</#if>"
+                          hx-target="#schedule-list-container"
+                          hx-swap="outerHTML"
+                          hx-push-url="false">Восстановить</m3e-button>
+            </div>
           <#else>
-            <div class="correction-trailing-placeholder" slot="trailing"></div>
+            <div class="schedule-row-actions" slot="trailing">
+              <#if file.canFixWithAi>
+                <m3e-icon-button class="correction-open-button"
+                                 hx-get="/schedule/corrections/${file.fileId?html}"
+                                 hx-target="#correction-pane-container"
+                                 hx-swap="innerHTML"
+                                 hx-push-url="false">
+                  <svg class="correction-open-icon" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 512 512" aria-hidden="true">
+                    <path d="M0 0h512v512H0z" fill="none" />
+                    <radialGradient id="SVGAklhae1G" cx="-80.789" cy="2.985" r="32" gradientTransform="rotate(18.683 -57.456 4644.03)scale(17.03 136.421)" gradientUnits="userSpaceOnUse">
+                      <stop offset=".067" stop-color="#9168c0" />
+                      <stop offset=".343" stop-color="#5684d1" />
+                      <stop offset=".672" stop-color="#1ba1e3" />
+                    </radialGradient>
+                    <path fill="url(#SVGAklhae1G)" d="M512 256.5c-137.5 8.4-247.1 118-255.5 255.5h-1C247.1 374.5 137.5 264.9 0 256.5v-1c137.5-8.4 247.1-118 255.5-255.5h1c8.4 137.5 118 247.1 255.5 255.5z" />
+                  </svg>
+                </m3e-icon-button>
+              <#else>
+                <div class="schedule-row-action-spacer"></div>
+              </#if>
+              <m3e-icon-button class="download-file-button"
+                               data-download-url="/schedule/download/${file.fileId?html}">
+                <m3e-icon name="download" variant="rounded"></m3e-icon>
+              </m3e-icon-button>
+            </div>
           </#if>
         </m3e-list-action>
         <#if file_has_next>
@@ -103,19 +114,26 @@
       </#list>
     </m3e-action-list>
 
-    <m3e-selection-list class="schedule-file-selection-list" multi hidden>
+    <m3e-selection-list class="schedule-file-selection-list" multi hide-selection-indicator hidden>
       <#list files as file>
         <#if file.status != "EMPTY">
           <m3e-list-option data-status="${file.status}" data-id="${file.fileId?html}" data-name="${file.name?html}">
             <@fileRow file=file />
+            <div class="schedule-row-actions-placeholder" slot="trailing">
+              <m3e-checkbox class="schedule-selection-checkbox"></m3e-checkbox>
+            </div>
           </m3e-list-option>
         </#if>
       </#list>
     </m3e-selection-list>
   <#else>
-    <div style="color: var(--md-sys-color-on-surface-variant); padding: 48px; text-align: center; font-size: 16px; display: flex; flex-direction: column; align-items: center; gap: 8px;">
-      <m3e-icon name="calendar_today" style="font-size: 48px; opacity: 0.5;"></m3e-icon>
-      <span>Нет активных расписаний. Загрузите файл, чтобы занять свободный слот.</span>
+    <div class="schedule-empty-state" style="color: var(--md-sys-color-on-surface-variant); padding: 48px; text-align: center; display: flex; flex-direction: column; align-items: center;">
+      <m3e-shape name="4-sided-cookie" style="--m3e-shape-container-color: var(--md-sys-color-surface-container); --m3e-shape-size: 96px;">
+        <div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
+          <m3e-icon name="calendar_today" variant="rounded" style="font-size: 48px; color: var(--md-sys-color-surface-tint)"></m3e-icon>
+        </div>
+      </m3e-shape>
+      <m3e-heading variant="headline" size="small" style="margin-top: 24px;">Файлы не найдены</m3e-heading>
     </div>
   </#if>
 </div>

@@ -27,6 +27,7 @@ dependencies {
     implementation(ktorLibs.server.cors)
     implementation(ktorLibs.server.doubleReceive)
     implementation(ktorLibs.server.forwardedHeader)
+    implementation(ktorLibs.server.defaultHeaders)
     implementation(ktorLibs.server.freemarker)
     implementation(ktorLibs.server.netty)
     implementation(ktorLibs.server.resources)
@@ -41,6 +42,9 @@ dependencies {
     implementation(libs.google.apiClient)
     implementation(libs.google.drive)
     implementation(libs.google.sheets)
+
+    implementation(platform(libs.exposed.bom))
+    implementation(libs.exposed.core)
 
     implementation(libs.gigachat)
 

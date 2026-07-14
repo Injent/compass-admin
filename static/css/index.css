@@ -44,7 +44,7 @@ m3e-theme,
 m3e-nav-rail {
     height: 100%;
     flex-shrink: 0;
-    --m3e-nav-rail-top-space: 24px
+    --m3e-nav-rail-top-space: 12px
 }
 
 /* Main Content Wrapper */
@@ -93,6 +93,10 @@ m3e-nav-rail {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+m3e-menu-item[hidden] {
+    display: none;
 }
 
 /* Loader styling */
@@ -296,6 +300,34 @@ m3e-content-pane,
     flex-shrink: 0;
 }
 
+.schedule-row-actions,
+.schedule-row-actions-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    width: 128px;
+    min-width: 128px;
+    max-width: 128px;
+    flex: 0 0 128px;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.schedule-row-action-spacer {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+}
+
+.download-file-button {
+    flex-shrink: 0;
+}
+
+.schedule-selection-checkbox {
+    pointer-events: none;
+}
+
 .correction-open-icon {
     display: block;
     width: 22px;
@@ -308,6 +340,11 @@ m3e-content-pane,
     height: 40px;
     opacity: 0;
     pointer-events: none;
+}
+
+.schedule-empty-state {
+    min-height: min(420px, calc(100vh - 260px));
+    justify-content: center;
 }
 
 @keyframes correction-pane-slide-in {

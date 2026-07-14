@@ -12,7 +12,8 @@
                   variant="filled"
                   hx-post="/schedule/corrections/${fileId?html}/suggest"
                   hx-target="#correction-pane-body"
-                  hx-swap="innerHTML">
+                  hx-swap="innerHTML"
+                  hx-push-url="false">
         Предложить исправления
       </m3e-button>
     </div>

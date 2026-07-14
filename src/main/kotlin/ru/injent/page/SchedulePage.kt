@@ -2,20 +2,26 @@ package ru.injent.page
 
 import io.ktor.http.*
 import io.ktor.http.content.*
+import io.ktor.server.application.*
 import io.ktor.server.freemarker.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.sse.*
+import io.ktor.utils.io.jvm.javaio.*
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.number
+import kotlinx.datetime.toLocalDateTime
 import ru.injent.dto.FileStatus
 import ru.injent.service.google.CellReplacement
 import ru.injent.service.google.NewGoogleService
 import ru.injent.service.google.SheetValidator
 import ru.injent.service.wordcorrection.WordCorrectionService
+import java.net.URLEncoder
 import kotlin.time.Clock
 
 fun Routing.schedulePage(
@@ -24,10 +30,24 @@ fun Routing.schedulePage(
     sheetValidators: Collection<SheetValidator>,
 ) {
     get("/schedule") {
+        if (!call.isHtmxRequest) {
+            call.respond(FreeMarkerContent("index.html", indexModel(call)))
+            return@get
+        }
+
         call.respond(
             FreeMarkerContent(
                 "schedule/schedule.html",
-                scheduleModel(googleService.files.value)
+                scheduleModel(googleService.files.value, filter = call.scheduleFilter)
+            )
+        )
+    }
+
+    get("/schedule/list") {
+        call.respond(
+            FreeMarkerContent(
+                "schedule/schedule_list_container.html",
+                scheduleModel(googleService.files.value, filter = call.scheduleFilter)
             )
         )
     }
@@ -37,8 +57,8 @@ fun Routing.schedulePage(
         call.respond(
             status = if (uploadResult.error == null) HttpStatusCode.OK else HttpStatusCode.BadRequest,
             message = FreeMarkerContent(
-                "schedule/schedule_list.html",
-                scheduleModel(googleService.files.value, uploadResult.error)
+                "schedule/schedule_list_container.html",
+                scheduleModel(googleService.files.value, uploadResult.error, call.scheduleFilter)
             )
         )
     }
@@ -61,8 +81,8 @@ fun Routing.schedulePage(
 
         call.respond(
             FreeMarkerContent(
-                "schedule/schedule_list.html",
-                scheduleModel(googleService.files.value, error)
+                "schedule/schedule_list_container.html",
+                scheduleModel(googleService.files.value, error, call.scheduleFilter)
             )
         )
     }
@@ -84,16 +104,57 @@ fun Routing.schedulePage(
 
         call.respond(
             FreeMarkerContent(
-                "schedule/schedule_list.html",
-                scheduleModel(googleService.files.value, error)
+                "schedule/schedule_list_container.html",
+                scheduleModel(googleService.files.value, error, call.scheduleFilter)
             )
         )
     }
 
+    get("/schedule/download") {
+        val files = googleService.files.value
+            .filter { file -> file.status != FileStatus.EMPTY }
+
+        if (files.isEmpty()) {
+            call.respond(HttpStatusCode.NotFound)
+            return@get
+        }
+
+        call.response.header(
+            HttpHeaders.ContentDisposition,
+            contentDisposition(scheduleArchiveFileName())
+        )
+        call.respondOutputStream(ZipContentType) {
+            googleService.exportAsZipTo(
+                files.associate { file ->
+                    file.fileId to file.name.withInvalidPrefix(file.status).ensureXlsxExtension()
+                },
+                this
+            ).getOrThrow()
+        }
+    }
+
+    get("/schedule/download/{fileId}") {
+        val fileId = call.parameters["fileId"].orEmpty()
+        val file = googleService.files.value.firstOrNull { file -> file.fileId == fileId }
+
+        if (file == null || file.status == FileStatus.EMPTY) {
+            call.respond(HttpStatusCode.NotFound)
+            return@get
+        }
+
+        call.response.header(
+            HttpHeaders.ContentDisposition,
+            contentDisposition(file.name.ensureXlsxExtension())
+        )
+        call.respondOutputStream(XlsxContentType) {
+            googleService.exportAsXlsxTo(fileId, this).getOrThrow()
+        }
+    }
+
     sse("/schedule/list/sse") {
         googleService.files
-            .map(::scheduleModel)
-            .onStart { emit(scheduleModel(googleService.files.value)) }
+            .map { files -> scheduleModel(files, filter = call.scheduleFilter) }
+            .onStart { emit(scheduleModel(googleService.files.value, filter = call.scheduleFilter)) }
             .drop(1)
             .collectLatest { model ->
                 send(
@@ -204,7 +265,7 @@ private suspend fun uploadFilesToFreeSlots(
 
             googleService.updateFileContent(target.fileId) {
                 name = fileName
-                inputStream = part.streamProvider()
+                inputStream = part.provider().toInputStream()
                 appProperties[KEY_STATUS] = FileStatus.PROCESSING.name
                 appProperties[KEY_UPLOAD_TIME] = Clock.System.now().toEpochMilliseconds().toString()
                 appProperties[KEY_CAN_FIX_WITH_AI] = false.toString()
@@ -225,6 +286,46 @@ private suspend fun uploadFilesToFreeSlots(
 private fun String.hasSpreadsheetExtension(): Boolean =
     endsWith(".xlsx", ignoreCase = true) || endsWith(".xls", ignoreCase = true)
 
+private fun String.ensureXlsxExtension(): String =
+    if (hasSpreadsheetExtension()) this else "$this.xlsx"
+
+private fun String.withInvalidPrefix(status: FileStatus): String =
+    if (status == FileStatus.INVALID) "ЕстьОшибки_$this" else this
+
+private fun scheduleArchiveFileName(): String {
+    val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+    return "Расписание от ${today.day} ${today.month.number.scheduleMonthAbbr()} ${today.year} г..zip"
+}
+
+private fun Int.scheduleMonthAbbr(): String =
+    when (this) {
+        1 -> "янв."
+        2 -> "фев."
+        3 -> "мар."
+        4 -> "апр."
+        5 -> "мая"
+        6 -> "июн."
+        7 -> "июл."
+        8 -> "авг."
+        9 -> "сент."
+        10 -> "окт."
+        11 -> "нояб."
+        12 -> "дек."
+        else -> ""
+    }
+
+private fun contentDisposition(fileName: String): String {
+    val fallback = fileName.replace(Regex("""[^\w.\- ]"""), "_")
+    val encoded = URLEncoder.encode(fileName, Charsets.UTF_8).replace("+", "%20")
+    return """attachment; filename="$fallback"; filename*=UTF-8''$encoded"""
+}
+
+private val ApplicationCall.scheduleFilter: String
+    get() = request.queryParameters["f"] ?: request.queryParameters["filter"] ?: "all"
+
+private val ApplicationCall.isHtmxRequest: Boolean
+    get() = request.headers["HX-Request"] == "true"
+
 private data class UploadResult(
     val error: String? = null
 )
@@ -232,3 +333,6 @@ private data class UploadResult(
 private const val KEY_STATUS = "status"
 private const val KEY_UPLOAD_TIME = "uploadTime"
 private const val KEY_CAN_FIX_WITH_AI = "canFixWithAi"
+
+private val ZipContentType = ContentType.parse("application/zip")
+private val XlsxContentType = ContentType.parse("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

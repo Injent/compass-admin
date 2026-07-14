@@ -10,6 +10,7 @@ import io.ktor.server.config.*
 import io.ktor.server.freemarker.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.cors.routing.*
+import io.ktor.server.plugins.defaultheaders.*
 import io.ktor.server.plugins.forwardedheaders.*
 import io.ktor.server.resources.*
 import io.ktor.server.routing.*
@@ -60,6 +61,11 @@ fun Application.configureApp() {
 
         anyHost()
         allowCredentials = true
+    }
+
+
+    install(DefaultHeaders) {
+        header(HttpHeaders.CacheControl, "no-store")
     }
     install(XForwardedHeaders)
     install(Koin) {

@@ -1,0 +1,33 @@
+<div id="schedule-list-container" hx-ext="sse" sse-connect="/schedule/list/sse<#if filter != "all">?f=${filter}</#if>">
+  <m3e-filter-chip-set id="status-filter-chips" aria-label="Фильтр по статусу" style="margin-bottom: 16px;">
+    <m3e-filter-chip id="chip-all"
+                     data-filter="all"
+                     hx-get="/schedule/list"
+                     hx-target="#schedule-list-container"
+                     hx-swap="outerHTML"
+                     hx-push-url="/schedule"
+                     <#if filter == "all">selected</#if>>Все</m3e-filter-chip>
+    <m3e-filter-chip id="chip-ready"
+                     data-filter="valid"
+                     hx-get="/schedule/list?f=valid"
+                     hx-target="#schedule-list-container"
+                     hx-swap="outerHTML"
+                     hx-push-url="/schedule?f=valid"
+                     <#if filter == "valid">selected</#if>>Проверенные</m3e-filter-chip>
+    <m3e-filter-chip id="chip-error"
+                     data-filter="invalid"
+                     hx-get="/schedule/list?f=invalid"
+                     hx-target="#schedule-list-container"
+                     hx-swap="outerHTML"
+                     hx-push-url="/schedule?f=invalid"
+                     <#if filter == "invalid">selected</#if>>С ошибками</m3e-filter-chip>
+    <m3e-filter-chip id="chip-deleted"
+                     data-filter="deleted"
+                     hx-get="/schedule/list?f=deleted"
+                     hx-target="#schedule-list-container"
+                     hx-swap="outerHTML"
+                     hx-push-url="/schedule?f=deleted"
+                     <#if filter == "deleted">selected</#if>>Удаленные</m3e-filter-chip>
+  </m3e-filter-chip-set>
+  <#include "/schedule/schedule_list.html">
+</div>

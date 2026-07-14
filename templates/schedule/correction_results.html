@@ -8,7 +8,8 @@
         class="correction-form"
         hx-post="/schedule/corrections/${fileId?html}/apply"
         hx-target="#correction-pane-body"
-        hx-swap="innerHTML">
+        hx-swap="innerHTML"
+        hx-push-url="false">
     <m3e-list class="correction-list">
       <#list suggestions as suggestion>
         <m3e-list-item class="correction-item" data-accepted="false">

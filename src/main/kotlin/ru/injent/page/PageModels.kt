@@ -22,10 +22,12 @@ data class FileView(
     val canFixWithAi: Boolean,
 )
 
-fun scheduleModel(files: List<SheetsFile>, error: String? = null): Map<String, Any?> =
+fun scheduleModel(files: List<SheetsFile>, error: String? = null, filter: String = FILTER_ALL): Map<String, Any?> =
     mapOf(
-        "files" to files.map(SheetsFile::toView),
-        "error" to error
+        "files" to files.filterByScheduleFilter(filter).map(SheetsFile::toView),
+        "hasUnreadyFiles" to files.any { file -> file.status == FileStatus.INVALID || file.status == FileStatus.PROCESSING },
+        "error" to error,
+        "filter" to filter.normalizeScheduleFilter(),
     )
 
 fun fileModel(file: SheetsFile): Map<String, Any> =
@@ -72,6 +74,27 @@ private fun SheetsFile.toView(): FileView =
         icon = status.toIcon(),
         canFixWithAi = canFixWithAi,
     )
+
+private fun List<SheetsFile>.filterByScheduleFilter(filter: String): List<SheetsFile> =
+    when (filter.normalizeScheduleFilter()) {
+        FILTER_VALID -> filter { file -> file.status == FileStatus.VALID }
+        FILTER_INVALID -> filter { file -> file.status == FileStatus.INVALID }
+        FILTER_DELETED -> filter { file -> file.status == FileStatus.EMPTY }
+        else -> filter { file -> file.status != FileStatus.EMPTY }
+    }
+
+private fun String.normalizeScheduleFilter(): String =
+    when (lowercase()) {
+        FILTER_VALID -> FILTER_VALID
+        FILTER_INVALID -> FILTER_INVALID
+        FILTER_DELETED -> FILTER_DELETED
+        else -> FILTER_ALL
+    }
+
+private const val FILTER_ALL = "all"
+private const val FILTER_VALID = "valid"
+private const val FILTER_INVALID = "invalid"
+private const val FILTER_DELETED = "deleted"
 
 private fun FileStatus.toText(): String =
     when (this) {

@@ -17,36 +17,56 @@
     </m3e-split-button>
 
     <m3e-menu id="menu" position-x="before">
-      <m3e-menu-item>Скачать все</m3e-menu-item>
-      <m3e-menu-item>Удалить</m3e-menu-item>
+      <m3e-menu-item id="download-all-menu-item">
+        <m3e-icon slot="icon" name="download" variant="rounded"></m3e-icon>
+        Скачать все
+      </m3e-menu-item>
+      <m3e-menu-item id="delete-mode-menu-item">
+        <m3e-icon slot="icon" name="delete" variant="rounded"></m3e-icon>
+        Удалить
+      </m3e-menu-item>
+      <m3e-menu-item id="cancel-delete-mode-menu-item" hidden>
+        <m3e-icon slot="icon" name="close" variant="rounded"></m3e-icon>
+        Отмена
+      </m3e-menu-item>
     </m3e-menu>
   </div>
 </div>
 
+<m3e-button id="download-all-dialog-trigger" variant="filled" style="position: absolute; width: 0; height: 0; overflow: hidden; opacity: 0; pointer-events: none;">
+  <m3e-dialog-trigger for="download-all-dialog">Скачать все</m3e-dialog-trigger>
+</m3e-button>
+<m3e-dialog id="download-all-dialog" dismissible>
+  <span slot="header">Скачать все файлы?</span>
+  <div>
+    В списке есть файлы с ошибками или файлы, которые еще обрабатываются. Они тоже попадут в архив.
+  </div>
+  <div slot="actions" end>
+    <m3e-button>
+      <m3e-dialog-action return-value="cancel">Отмена</m3e-dialog-action>
+    </m3e-button>
+    <m3e-button variant="filled" id="download-all-confirm-button" autofocus>
+      <m3e-dialog-action return-value="download">Скачать</m3e-dialog-action>
+    </m3e-button>
+  </div>
+</m3e-dialog>
+
 <input type="file" id="file-input" name="files" accept=".xlsx,.xls" multiple style="display: none;"
        hx-post="/schedule/upload"
        hx-trigger="change"
-       hx-target="#schedule-list"
+       hx-target="#schedule-list-container"
        hx-swap="outerHTML"
        hx-encoding="multipart/form-data">
 
 <form id="schedule-delete-form"
       hx-post="/schedule/delete"
-      hx-target="#schedule-list"
+      hx-target="#schedule-list-container"
       hx-swap="outerHTML"
       style="display: none;"></form>
 
 <m3e-split-pane id="schedule-split-pane" class="schedule-workspace" value="100" min="45" max="100">
   <m3e-content-pane class="schedule-pane" slot="start">
-    <div id="schedule-list-container" hx-ext="sse" sse-connect="/schedule/list/sse">
-      <m3e-filter-chip-set id="status-filter-chips" aria-label="Фильтр по статусу" style="margin-bottom: 16px;">
-        <m3e-filter-chip id="chip-all" selected data-filter="all">Все</m3e-filter-chip>
-        <m3e-filter-chip id="chip-ready" data-filter="valid">Проверенные</m3e-filter-chip>
-        <m3e-filter-chip id="chip-error" data-filter="invalid">С ошибками</m3e-filter-chip>
-        <m3e-filter-chip id="chip-deleted" data-filter="deleted">Удаленные</m3e-filter-chip>
-      </m3e-filter-chip-set>
-      <#include "/schedule/schedule_list.html">
-    </div>
+    <#include "/schedule/schedule_list_container.html">
   </m3e-content-pane>
   <div id="correction-pane-container" slot="end" hidden></div>
 </m3e-split-pane>
@@ -55,7 +75,6 @@
   (function() {
     let deleteMode = false;
     let selectedIdsBeforeSwap = [];
-    document.querySelector('#menu m3e-menu-item:last-child')?.setAttribute('id', 'delete-mode-menu-item');
 
     const getPrimaryButton = () => document.getElementById('upload-btn');
     const getPrimaryIcon = () => document.getElementById('schedule-main-action-icon');
@@ -67,6 +86,14 @@
       return selectedChip ? selectedChip.getAttribute('data-filter') : 'all';
     };
     const isDeletedFilterSelected = () => getSelectedFilter() === 'deleted';
+    const currentFilterQuery = () => {
+      const filter = getSelectedFilter();
+      return filter === 'all' ? '' : 'f=' + encodeURIComponent(filter);
+    };
+    const withCurrentFilter = (path) => {
+      const query = currentFilterQuery();
+      return query ? path + '?' + query : path;
+    };
 
     const setPrimaryButtonLabel = (label) => {
       const button = getPrimaryButton();
@@ -114,6 +141,16 @@
       }
     };
 
+    const updateMenuMode = () => {
+      const downloadItem = document.getElementById('download-all-menu-item');
+      const deleteItem = document.getElementById('delete-mode-menu-item');
+      const cancelItem = document.getElementById('cancel-delete-mode-menu-item');
+
+      if (downloadItem) downloadItem.hidden = deleteMode;
+      if (deleteItem) deleteItem.hidden = deleteMode;
+      if (cancelItem) cancelItem.hidden = !deleteMode;
+    };
+
     const setScheduleSelectionMode = (enabled) => {
       const actionList = getScheduleActionList();
       const selectionList = getScheduleSelectionList();
@@ -135,6 +172,25 @@
         option.removeAttribute('selected');
         option.removeAttribute('aria-selected');
       });
+      syncScheduleSelectionCheckboxes();
+    };
+
+    const syncScheduleSelectionCheckboxes = () => {
+      const list = getScheduleSelectionList();
+      if (!list) return;
+
+      list.querySelectorAll('m3e-list-option[data-id]').forEach(option => {
+        const checkbox = option.querySelector('m3e-checkbox');
+        if (!checkbox) return;
+
+        const selected = option.selected || option.hasAttribute('selected') || option.getAttribute('aria-selected') === 'true';
+        checkbox.checked = selected;
+        if (selected) {
+          checkbox.setAttribute('checked', '');
+        } else {
+          checkbox.removeAttribute('checked');
+        }
+      });
     };
 
     const restoreScheduleSelection = (fileIds) => {
@@ -152,6 +208,7 @@
           option.removeAttribute('aria-selected');
         }
       });
+      syncScheduleSelectionCheckboxes();
     };
 
     const updatePrimaryAction = () => {
@@ -159,6 +216,8 @@
       const icon = getPrimaryIcon();
       if (!button || !icon) return;
       setScheduleSelectionMode(deleteMode);
+      updateMenuMode();
+      syncScheduleSelectionCheckboxes();
 
       if (!deleteMode) {
         button.dataset.mode = 'upload';
@@ -203,6 +262,7 @@
       const form = document.getElementById('schedule-delete-form');
       if (!form) return;
 
+      form.setAttribute('hx-post', withCurrentFilter('/schedule/delete'));
       form.innerHTML = '';
       fileIds.forEach(fileId => {
         const input = document.createElement('input');
@@ -233,26 +293,65 @@
         } else if (uploadBtn.dataset.mode === 'cancel-delete') {
           exitDeleteMode();
         } else {
+          document.getElementById('file-input').setAttribute('hx-post', withCurrentFilter('/schedule/upload'));
           document.getElementById('file-input').click();
         }
         return;
       }
 
-      const deleteMenuItem = e.target.closest('#delete-mode-menu-item') || e.target.closest('m3e-menu-item:last-child');
+      const downloadAllMenuItem = e.target.closest('#download-all-menu-item');
+      if (downloadAllMenuItem && downloadAllMenuItem.closest('#menu')) {
+        const scheduleList = document.getElementById('schedule-list');
+        if (scheduleList && scheduleList.dataset.hasUnreadyFiles === 'true') {
+          const dialogTrigger = document.querySelector('#download-all-dialog-trigger m3e-dialog-trigger');
+          if (dialogTrigger) {
+            dialogTrigger.click();
+            return;
+          }
+        }
+        window.location.href = '/schedule/download';
+        return;
+      }
+
+      const downloadAllConfirmButton = e.target.closest('#download-all-confirm-button');
+      if (downloadAllConfirmButton) {
+        window.location.href = '/schedule/download';
+        return;
+      }
+
+      const cancelDeleteMenuItem = e.target.closest('#cancel-delete-mode-menu-item');
+      if (cancelDeleteMenuItem && cancelDeleteMenuItem.closest('#menu')) {
+        exitDeleteMode();
+        return;
+      }
+
+      const deleteMenuItem = e.target.closest('#delete-mode-menu-item');
       if (deleteMenuItem && deleteMenuItem.closest('#menu')) {
         enterDeleteMode();
+      }
+
+      const downloadFileButton = e.target.closest('.download-file-button');
+      if (downloadFileButton) {
+        const downloadUrl = downloadFileButton.getAttribute('data-download-url');
+        if (downloadUrl) {
+          window.location.href = downloadUrl;
+        }
+        return;
       }
     });
 
     document.addEventListener('click', function(e) {
-      if (e.correctionButtonClick || e.target.closest('.correction-open-button') || e.target.closest('.restore-file-button')) {
+      if (e.correctionButtonClick || e.target.closest('.correction-open-button') || e.target.closest('.restore-file-button') || e.target.closest('.download-file-button')) {
         return;
       }
 
       const listOption = e.target.closest('m3e-list-option');
       if (listOption) {
         if (deleteMode) {
-          window.setTimeout(updatePrimaryAction, 0);
+          window.setTimeout(() => {
+            syncScheduleSelectionCheckboxes();
+            updatePrimaryAction();
+          }, 0);
         }
         return;
       }
@@ -273,8 +372,6 @@
       if (!searchInput) return;
 
       const query = searchInput.value.toLowerCase().trim();
-      const selectedFilter = getSelectedFilter();
-
       getScheduleLists().forEach(container => {
         const children = Array.from(container.children);
 
@@ -296,17 +393,9 @@
           }
 
           const text = child.textContent.toLowerCase();
-          const status = child.getAttribute('data-status') || '';
-
           const matchesSearch = text.includes(query);
-          const matchesFilter = (
-            (selectedFilter === 'all' && status !== 'EMPTY') ||
-            (selectedFilter === 'valid' && status === 'VALID') ||
-            (selectedFilter === 'invalid' && status === 'INVALID') ||
-            (selectedFilter === 'deleted' && status === 'EMPTY')
-          );
 
-          if (matchesSearch && matchesFilter) {
+          if (matchesSearch) {
             child.style.display = '';
             let sibling = child.previousElementSibling;
             while (sibling && sibling.tagName.toLowerCase() === 'm3e-divider') {
@@ -319,17 +408,20 @@
         });
       });
       updateDeleteMenuAvailability();
+      syncScheduleSelectionCheckboxes();
       updatePrimaryAction();
     };
 
     document.addEventListener('change', function(e) {
       if (e.target.closest && e.target.closest('m3e-selection-list')) {
+        syncScheduleSelectionCheckboxes();
         updatePrimaryAction();
       }
     });
 
     document.addEventListener('input', function(e) {
       if (e.target.closest && e.target.closest('m3e-selection-list')) {
+        syncScheduleSelectionCheckboxes();
         updatePrimaryAction();
       }
     });
@@ -346,27 +438,6 @@
         const searchInput = document.getElementById('search-input');
         if (searchInput) searchInput.value = '';
         filterFiles();
-      }
-    });
-
-    document.addEventListener('click', function(e) {
-      const chip = e.target.closest('m3e-filter-chip');
-      if (chip) {
-        const chipSet = chip.closest('#status-filter-chips');
-        if (chipSet) {
-          const chips = chipSet.querySelectorAll('m3e-filter-chip');
-          chips.forEach(c => {
-            if (c === chip) {
-              c.setAttribute('selected', '');
-            } else {
-              c.removeAttribute('selected');
-            }
-          });
-          if (chip.getAttribute('data-filter') === 'deleted') {
-            exitDeleteMode();
-          }
-          filterFiles();
-        }
       }
     });
 
@@ -404,7 +475,9 @@
         filterFiles();
         startProcessingAnimation();
         const requestElement = e.detail.requestConfig && e.detail.requestConfig.elt;
-        if (requestElement && requestElement.id === 'schedule-delete-form') {
+        if (isDeletedFilterSelected()) {
+          exitDeleteMode();
+        } else if (requestElement && requestElement.id === 'schedule-delete-form') {
           exitDeleteMode();
         } else if (deleteMode) {
           restoreScheduleSelection(selectedIdsBeforeSwap);
@@ -414,7 +487,7 @@
     });
 
     document.addEventListener('htmx:beforeSwap', function(e) {
-      if (e.detail.target.id !== 'schedule-list' || !deleteMode) return;
+      if ((e.detail.target.id !== 'schedule-list' && e.detail.target.id !== 'schedule-list-container') || !deleteMode) return;
 
       const requestElement = e.detail.requestConfig && e.detail.requestConfig.elt;
       if (requestElement && requestElement.id === 'schedule-delete-form') return;

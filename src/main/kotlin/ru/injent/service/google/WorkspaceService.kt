@@ -66,9 +66,12 @@ class NewGoogleService(
     }
 
     suspend fun exportAsZipTo(fileIds: Collection<String>, output: OutputStream) =
-        withFileLocks(fileIds) {
-            runResulting("export zip $fileIds") {
-            val deferredFiles = fileIds.map { id ->
+        exportAsZipTo(fileIds.associateWith { id -> getFileName(id) ?: id }, output)
+
+    suspend fun exportAsZipTo(fileNamesById: Map<String, String>, output: OutputStream) =
+        withFileLocks(fileNamesById.keys) {
+            runResulting("export zip ${fileNamesById.keys}") {
+            val deferredFiles = fileNamesById.keys.map { id ->
                 async(ioDispatcher) {
                     id to downloadFileWithRetry(id).getOrElse { return@async null }
                 }
@@ -78,7 +81,7 @@ class NewGoogleService(
 
             ZipOutputStream(output).use { zipOut ->
                 for ((fileId, bytes) in downloadedFiles) {
-                    val entry = ZipEntry(getFileName(fileId) ?: fileId)
+                    val entry = ZipEntry(fileNamesById[fileId] ?: fileId)
                     zipOut.putNextEntry(entry)
                     zipOut.write(bytes)
                     zipOut.closeEntry()
@@ -377,7 +380,7 @@ class NewGoogleService(
         while (attempt < maxRetries) {
             try {
                 val bytes = drive.files()
-                    .get(fileId)
+                    .export(fileId, XLSX_MIME)
                     .executeMediaAsInputStream()
                     .use { it.readBytes() }
 

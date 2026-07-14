@@ -25,19 +25,19 @@
         <div class="app-layout">
             <m3e-nav-rail id="nav-rail">
                 <m3e-icon-button toggle>
-                    <m3e-icon name="menu"></m3e-icon>
+                    <m3e-icon name="menu" variant="rounded"></m3e-icon>
                     <m3e-icon slot="selected" name="menu_open"></m3e-icon>
                     <m3e-nav-rail-toggle for="nav-rail"></m3e-nav-rail-toggle>
                 </m3e-icon-button>
-                <m3e-nav-item class="active-nav-item" data-route="/schedule" hx-get="/schedule" hx-target="#content-area" hx-trigger="click" active selected>
-                    <m3e-icon slot="icon" name="calendar_today"></m3e-icon>
-                    <m3e-icon slot="selected" name="calendar_today"></m3e-icon>
+                <m3e-nav-item class="active-nav-item" data-route="/schedule" hx-get="/schedule" hx-target="#content-area" hx-trigger="click" hx-push-url="/schedule" active selected>
+                    <m3e-icon slot="icon" name="calendar_today" variant="rounded"></m3e-icon>
+                    <m3e-icon slot="selected" name="calendar_today" variant="rounded"></m3e-icon>
                     <span class="nav-item-label">Расписание</span>
                 </m3e-nav-item>
             </m3e-nav-rail>
 
             <main class="app-content">
-                <div id="content-area" hx-get="/schedule" hx-trigger="load" hx-swap="innerHTML">
+                <div id="content-area" hx-get="${initialScheduleUrl}" hx-trigger="load" hx-swap="innerHTML" hx-replace-url="${initialScheduleUrl}">
                     <div class="loader-wrapper">
                         <span class="loader-text">Подключение к Google Drive...</span>
                     </div>
