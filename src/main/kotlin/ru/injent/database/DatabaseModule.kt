@@ -7,7 +7,8 @@ import org.koin.dsl.module
 
 val databaseModule = module {
     single {
-        Database.connect("jdbc:sqlite:compassadmin.db", driver = "org.sqlite.JDBC")
+        val databasePath = System.getenv("COMPASS_DB_PATH") ?: "compassadmin.db"
+        Database.connect("jdbc:sqlite:$databasePath", driver = "org.sqlite.JDBC")
             .also(::initializeDatabase)
     }
 }

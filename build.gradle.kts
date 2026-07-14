@@ -1,3 +1,5 @@
+
+import io.ktor.plugin.features.*
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
@@ -16,6 +18,64 @@ application {
 
 kotlin {
     jvmToolchain(21)
+}
+
+val prepareJibExtra by tasks.registering(Sync::class) {
+    into(layout.buildDirectory.dir("jib-extra/app"))
+    from("templates") {
+        into("templates")
+    }
+    from("static") {
+        into("static")
+    }
+    from("system_instructions.txt")
+}
+
+ktor {
+    docker {
+        jreVersion.set(JavaVersion.VERSION_21)
+        localImageName.set("compassadmin")
+        imageTag.set(project.version.toString())
+        portMappings.set(
+            listOf(
+                DockerPortMapping(
+                    outsideDocker = 8080,
+                    insideDocker = 8080,
+                    protocol = DockerPortMappingProtocol.TCP,
+                )
+            )
+        )
+    }
+}
+
+jib {
+    container {
+        mainClass = application.mainClass.get()
+        ports = listOf("8080")
+        environment = mapOf("COMPASS_DB_PATH" to "/app/data/compassadmin.db")
+        workingDirectory = "/app"
+        volumes = listOf("/app/google", "/app/tokens", "/app/data")
+    }
+    extraDirectories {
+        paths {
+            path {
+                setFrom(layout.buildDirectory.dir("jib-extra"))
+                into = "/"
+            }
+        }
+    }
+}
+
+tasks.named("jibBuildTar") {
+    dependsOn(prepareJibExtra)
+}
+
+tasks.named("jibDockerBuild") {
+    dependsOn(prepareJibExtra)
+}
+
+tasks.named("jib") {
+    dependsOn(prepareJibExtra)
 }
 
 dependencies {

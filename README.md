@@ -37,6 +37,8 @@ To build or run the project, use one of the following tasks:
 | `./gradlew test`  | Run the tests     |
 | `./gradlew build` | Build the project |
 | `./gradlew run`   | Run the server    |
+| `./gradlew buildImage` | Build a Docker image tarball with Jib |
+| `./gradlew publishImageToLocalRegistry` | Build `compassadmin:1.0.0-SNAPSHOT` into the local Docker daemon |
 
 If the server starts successfully, you'll see the following output:
 
@@ -44,3 +46,29 @@ If the server starts successfully, you'll see the following output:
 2024-12-04 14:32:45.584 [main] INFO  Application - Application started in 0.303 seconds.
 2024-12-04 14:32:45.682 [main] INFO  Application - Responding at http://0.0.0.0:8080
 ```
+
+## Docker
+
+The Gradle Ktor plugin builds the image through Jib. Runtime files are expected at `/app` inside the container:
+
+```shell
+./gradlew publishImageToLocalRegistry
+docker run --rm -p 8080:8080 \
+  -v "$PWD/google:/app/google" \
+  -v "$PWD/tokens:/app/tokens" \
+  -v "$PWD/data:/app/data" \
+  compassadmin:1.0.0-SNAPSHOT
+```
+
+On Windows PowerShell:
+
+```powershell
+.\gradlew.bat publishImageToLocalRegistry
+docker run --rm -p 8080:8080 `
+  -v "${PWD}\google:/app/google" `
+  -v "${PWD}\tokens:/app/tokens" `
+  -v "${PWD}\data:/app/data" `
+  compassadmin:1.0.0-SNAPSHOT
+```
+
+`templates`, `static`, and `system_instructions.txt` are copied into the image. `google`, `tokens`, and the SQLite database are mounted as volumes; the container uses `/app/data/compassadmin.db` via `COMPASS_DB_PATH`.
