@@ -1,0 +1,16 @@
+services:
+  compassadmin:
+    image: ghcr.io/OWNER/REPOSITORY:latest
+    container_name: compassadmin
+    restart: unless-stopped
+    ports:
+      - "9001:9001"
+    environment:
+      COMPASS_DB_PATH: /app/data/compassadmin.db
+      GOOGLE_CREDENTIALS_PATH: /app/google/credentials.json
+      GOOGLE_TOKENS_DIR: /app/tokens
+    volumes:
+      - ./application.yaml:/app/config/application.yaml:ro
+      - ./google/credentials.json:/app/google/credentials.json:ro
+      - ./tokens:/app/tokens
+      - ./data:/app/data

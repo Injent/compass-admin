@@ -1,5 +1,13 @@
 /build/
 /.gradle/
 /.kotlin/
+/.idea/
 /google/
 /tokens/
+/data/
+/application.yaml
+/compassadmin.db
+
+*.db
+*.sqlite
+*.sqlite3

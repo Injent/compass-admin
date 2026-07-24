@@ -2,32 +2,6 @@
 
 This project was created using the [Ktor Project Generator](https://start.ktor.io).
 
-Here are some useful links to get you started:
-
-* [Ktor Documentation](https://ktor.io/docs/home.html)
-* [Ktor GitHub page](https://github.com/ktorio/ktor)
-* [Ktor Slack chat](https://app.slack.com/client/T09229ZC6/C0A974TJ9). [Request an invite](https://surveys.jetbrains.com/s3/kotlin-slack-sign-up).
-
-## Features
-
-Here's a list of features included in this project:
-
-| Name                                                                                  | Description                                                                        |
-|---------------------------------------------------------------------------------------|------------------------------------------------------------------------------------|
-| [CORS](https://start.ktor.io/p/io.ktor/server-cors)                                   | Enables Cross-Origin Resource Sharing (CORS)                                       |
-| [Forwarded Headers](https://start.ktor.io/p/io.ktor/server-forwarded-header-support)  | Allows handling proxied headers (X-Forwarded-*)                                    |
-| [Swagger](https://start.ktor.io/p/io.ktor/server-swagger)                             | Serves Swagger UI for your project                                                 |
-| [Authentication](https://start.ktor.io/p/io.ktor/server-auth)                         | Provides extension point for handling the Authorization header                     |
-| [Authentication Basic](https://start.ktor.io/p/io.ktor/server-auth-basic)             | Handles 'Basic' username / password authentication scheme                          |
-| [Resources](https://start.ktor.io/p/io.ktor/server-resources)                         | Provides type-safe routing                                                         |
-| [Server-Sent Events (SSE)](https://start.ktor.io/p/io.ktor/server-sse)                | Support for server push events                                                     |
-| [Static Content](https://start.ktor.io/p/io.ktor/server-static-content)               | Serves static files from defined locations                                         |
-| [Call Logging](https://start.ktor.io/p/io.ktor/server-call-logging)                   | Logs client requests                                                               |
-| [Content Negotiation](https://start.ktor.io/p/io.ktor/server-content-negotiation)     | Provides automatic content conversion according to Content-Type and Accept headers |
-| [kotlinx.serialization](https://start.ktor.io/p/io.ktor/server-kotlinx-serialization) | Handles JSON serialization using kotlinx.serialization library                     |
-| [Koin](https://start.ktor.io/p/io.insert-koin/server-koin)                            | Provides dependency injection                                                      |
-| [Freemarker](https://start.ktor.io/p/io.ktor/server-freemarker)                       | Serves HTML content using Apache's FreeMarker template engine                      |
-
 ## Building & Running
 
 To build or run the project, use one of the following tasks:
@@ -38,37 +12,79 @@ To build or run the project, use one of the following tasks:
 | `./gradlew build` | Build the project |
 | `./gradlew run`   | Run the server    |
 | `./gradlew buildImage` | Build a Docker image tarball with Jib |
-| `./gradlew publishImageToLocalRegistry` | Build `compassadmin:1.0.0-SNAPSHOT` into the local Docker daemon |
+| `./gradlew publishImageToLocalRegistry` | Build `compassadmin:1` into the local Docker daemon |
 
 If the server starts successfully, you'll see the following output:
 
-```
-2024-12-04 14:32:45.584 [main] INFO  Application - Application started in 0.303 seconds.
-2024-12-04 14:32:45.682 [main] INFO  Application - Responding at http://0.0.0.0:8080
+```text
+Application started
+Responding at http://0.0.0.0:9001
 ```
 
 ## Docker
 
-The Gradle Ktor plugin builds the image through Jib. Runtime files are expected at `/app` inside the container:
+The Gradle Ktor plugin builds the image through Jib. Secret and mutable runtime files are not copied into the image:
+
+- `application.yaml` is mounted as `/app/config/application.yaml`
+- `google/credentials.json` is mounted as `/app/google/credentials.json`
+- `tokens` is mounted as `/app/tokens`
+- SQLite data is mounted as `/app/data`
 
 ```shell
+cp application.example.yaml application.yaml
+mkdir -p google tokens data
+# put google/credentials.json in place and replace placeholders in application.yaml
+
 ./gradlew publishImageToLocalRegistry
-docker run --rm -p 8080:8080 \
+docker run --rm -p 9001:9001 \
+  -v "$PWD/application.yaml:/app/config/application.yaml:ro" \
   -v "$PWD/google:/app/google" \
   -v "$PWD/tokens:/app/tokens" \
   -v "$PWD/data:/app/data" \
-  compassadmin:1.0.0-SNAPSHOT
+  compassadmin:1
 ```
 
 On Windows PowerShell:
 
 ```powershell
+Copy-Item application.example.yaml application.yaml
+New-Item -ItemType Directory -Force google, tokens, data
+# put google\credentials.json in place and replace placeholders in application.yaml
+
 .\gradlew.bat publishImageToLocalRegistry
-docker run --rm -p 8080:8080 `
+docker run --rm -p 9001:9001 `
+  -v "${PWD}\application.yaml:/app/config/application.yaml:ro" `
   -v "${PWD}\google:/app/google" `
   -v "${PWD}\tokens:/app/tokens" `
   -v "${PWD}\data:/app/data" `
-  compassadmin:1.0.0-SNAPSHOT
+  compassadmin:1
 ```
 
-`templates`, `static`, and `system_instructions.txt` are copied into the image. `google`, `tokens`, and the SQLite database are mounted as volumes; the container uses `/app/data/compassadmin.db` via `COMPASS_DB_PATH`.
+`templates`, `static`, and `system_instructions.txt` are copied into the image. `application.yaml`, `google`, `tokens`, and the SQLite database are mounted as volumes; the container uses `/app/data/compassadmin.db` via `COMPASS_DB_PATH`.
+
+If you already have `compassadmin.db` in the project root, move or copy it to `data/compassadmin.db` before running the container. If the file is absent, the application creates the SQLite schema on startup.
+
+## GitHub image publishing
+
+`.github/workflows/docker-image.yml` builds and publishes the image to GitHub Container Registry:
+
+```text
+ghcr.io/<owner>/<repository>:<commit-sha>
+ghcr.io/<owner>/<repository>:latest
+```
+
+The workflow does not need application secrets because they are only used at runtime. On the server, copy `docker-compose.example.yml` to `docker-compose.yml`, replace `ghcr.io/OWNER/REPOSITORY:latest`, and keep these files next to it:
+
+```text
+application.yaml
+google/credentials.json
+tokens/
+data/compassadmin.db
+```
+
+Then run:
+
+```shell
+docker compose pull
+docker compose up -d
+```

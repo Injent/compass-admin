@@ -1,0 +1,15 @@
+.git
+.github
+.gradle
+.idea
+.kotlin
+build
+data
+google
+tokens
+
+application.yaml
+compassadmin.db
+*.db
+*.sqlite
+*.sqlite3

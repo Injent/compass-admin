@@ -28,7 +28,8 @@ val googleModule = module {
     }
     single<HttpRequestInitializer> {
         getGoogleCredential(
-            credentialFile = File("google/credentials.json"),
+            credentialFile = File(System.getenv("GOOGLE_CREDENTIALS_PATH") ?: "google/credentials.json"),
+            tokensDirectory = File(System.getenv("GOOGLE_TOKENS_DIR") ?: "tokens"),
             httpTransport = get(),
             jsonFactory = get()
         )
@@ -50,6 +51,7 @@ private const val APP_NAME = "Validation Sheets"
 
 private fun getGoogleCredential(
     credentialFile: File,
+    tokensDirectory: File,
     httpTransport: HttpTransport,
     jsonFactory: JsonFactory,
 ): Credential {
@@ -62,7 +64,7 @@ private fun getGoogleCredential(
             DRIVE,
         )
     )
-        .setDataStoreFactory(FileDataStoreFactory(File("tokens")))
+        .setDataStoreFactory(FileDataStoreFactory(tokensDirectory))
         .setAccessType("offline")
         .build()
 

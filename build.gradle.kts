@@ -10,14 +10,14 @@ plugins {
 }
 
 group = "ru.injent"
-version = "1.0.0-SNAPSHOT"
+version = "1"
 
 application {
     mainClass = "io.ktor.server.netty.EngineMain"
 }
 
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(17)
 }
 
 val prepareJibExtra by tasks.registering(Sync::class) {
@@ -33,14 +33,14 @@ val prepareJibExtra by tasks.registering(Sync::class) {
 
 ktor {
     docker {
-        jreVersion.set(JavaVersion.VERSION_21)
+        jreVersion.set(JavaVersion.VERSION_17)
         localImageName.set("compassadmin")
         imageTag.set(project.version.toString())
         portMappings.set(
             listOf(
                 DockerPortMapping(
-                    outsideDocker = 8080,
-                    insideDocker = 8080,
+                    outsideDocker = 9001,
+                    insideDocker = 9001,
                     protocol = DockerPortMappingProtocol.TCP,
                 )
             )
@@ -51,10 +51,15 @@ ktor {
 jib {
     container {
         mainClass = application.mainClass.get()
-        ports = listOf("8080")
-        environment = mapOf("COMPASS_DB_PATH" to "/app/data/compassadmin.db")
+        args = listOf("-config=/app/config/application.yaml")
+        ports = listOf("9001")
+        environment = mapOf(
+            "COMPASS_DB_PATH" to "/app/data/compassadmin.db",
+            "GOOGLE_CREDENTIALS_PATH" to "/app/google/credentials.json",
+            "GOOGLE_TOKENS_DIR" to "/app/tokens",
+        )
         workingDirectory = "/app"
-        volumes = listOf("/app/google", "/app/tokens", "/app/data")
+        volumes = listOf("/app/config", "/app/google", "/app/tokens", "/app/data")
     }
     extraDirectories {
         paths {
@@ -126,37 +131,4 @@ val compileKotlin: KotlinCompile by tasks
 
 compileKotlin.compilerOptions {
     freeCompilerArgs.set(listOf("-Xexplicit-backing-fields", "-Xcontext-parameters"))
-}
-
-tasks.shadowJar {
-    duplicatesStrategy = DuplicatesStrategy.INCLUDE
-    mergeServiceFiles()
-    append("META-INF/io.netty.versions.properties")
-    exclude("META-INF/LICENSE*")
-    exclude("META-INF/NOTICE*")
-    exclude("META-INF/DEPENDENCIES")
-
-    minimize {
-        r8 {
-            keepRules.addAll(
-                listOf(
-                    "-keep class ru.injent.AppKt { public static void configureApp(io.ktor.server.application.Application); }",
-                    "-dontwarn io.netty.internal.tcnative.**",
-                    "-dontwarn jakarta.servlet.**",
-                    "-dontwarn lombok.Generated",
-                    "-dontwarn org.apache.log4j.**",
-                    "-dontwarn org.apache.logging.log4j.**",
-                    "-dontwarn org.apache.xml.utils.**",
-                    "-dontwarn org.bouncycastle.**",
-                    "-dontwarn org.conscrypt.**",
-                    "-dontwarn org.jaxen.**",
-                    "-dontwarn org.python.**",
-                    "-dontwarn org.zeroturnaround.javarebel.**",
-                    "-dontwarn reactor.blockhound.**",
-                )
-            )
-            enableObfuscation()
-            enableOptimization()
-        }
-    }
 }
