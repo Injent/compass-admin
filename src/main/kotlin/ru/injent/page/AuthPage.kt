@@ -88,7 +88,7 @@ fun Application.installAuthGuard(authService: AuthService) {
 }
 
 private fun String.isPublicAuthPath(): Boolean =
-    this == "/auth" || this == "/auth/login" || this == "/static/css/index.css"
+    this == "/auth" || this == "/auth/login" || startsWith("/static/")
 
 private fun io.ktor.server.application.ApplicationCall.shouldRedirectToAuth(): Boolean =
     request.httpMethod.value == "GET" &&

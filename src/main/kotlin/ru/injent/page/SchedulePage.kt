@@ -21,6 +21,7 @@ import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
 import ru.injent.dto.FileStatus
 import ru.injent.service.config.AppConfig
+import ru.injent.service.config.CompassApiConfig
 import ru.injent.service.google.CellReplacement
 import ru.injent.service.google.NewGoogleService
 import ru.injent.service.google.SheetValidator
@@ -313,8 +314,8 @@ private suspend fun sendApprovedScheduleFiles(
     }
 }
 
-private fun ru.injent.service.config.CompassApiConfig.approveScheduleUrl(): String =
-    host.trimEnd('/') + "/schedule"
+private fun CompassApiConfig.approveScheduleUrl(): String =
+    host.trimEnd('/') + "/uploadNewSchedules"
 
 private fun multipartFileDisposition(name: String, fileName: String): String {
     val fallback = fileName.replace(Regex("""[^\w.\- ]"""), "_")

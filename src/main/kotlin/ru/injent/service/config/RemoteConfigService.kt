@@ -16,6 +16,7 @@ class RemoteConfigService(
 
     suspend fun update(remoteConfig: RemoteConfig) {
         client.post(remoteConfigUrl()) {
+            header(HttpHeaders.Authorization, "Bearer ${config.compassApiConfig.apiKey}")
             contentType(ContentType.Application.Json)
             setBody(remoteConfig)
         }
