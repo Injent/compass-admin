@@ -71,6 +71,9 @@
       <#list files as file>
         <m3e-list-action data-status="${file.status}" data-id="${file.fileId?html}" data-name="${file.name?html}">
           <@fileRow file=file />
+          <#if file.supportingText??>
+            <span slot="supporting-text" class="schedule-file-supporting-text">${file.supportingText?html}</span>
+          </#if>
           <#if file.status == "EMPTY">
             <div class="schedule-row-actions" slot="trailing">
               <m3e-button class="restore-file-button"
@@ -119,6 +122,9 @@
         <#if file.status != "EMPTY">
           <m3e-list-option data-status="${file.status}" data-id="${file.fileId?html}" data-name="${file.name?html}">
             <@fileRow file=file />
+            <#if file.supportingText??>
+              <span slot="supporting-text" class="schedule-file-supporting-text">${file.supportingText?html}</span>
+            </#if>
             <div class="schedule-row-actions-placeholder" slot="trailing">
               <m3e-checkbox class="schedule-selection-checkbox"></m3e-checkbox>
             </div>

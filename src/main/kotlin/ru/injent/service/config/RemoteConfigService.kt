@@ -30,8 +30,6 @@ class RemoteConfigService(
 data class RemoteConfig(
     @SerialName("termStartDate")
     val termStartDate: String,
-    @SerialName("swapWeeks")
-    val swapWeeks: Boolean,
     @SerialName("lastResetTimestamp")
     val lastResetTimestamp: String,
     @SerialName("versionCode")

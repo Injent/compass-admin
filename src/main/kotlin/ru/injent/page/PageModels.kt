@@ -20,15 +20,22 @@ data class FileView(
     val createdTime: String,
     val icon: String,
     val canFixWithAi: Boolean,
+    val supportingText: String?,
 )
 
 fun scheduleModel(files: List<SheetsFile>, error: String? = null, filter: String = FILTER_ALL): Map<String, Any?> =
     mapOf(
         "files" to files.filterByScheduleFilter(filter).map(SheetsFile::toView),
-        "hasUnreadyFiles" to files.any { file -> file.status == FileStatus.INVALID || file.status == FileStatus.PROCESSING },
+        "hasUnreadyFiles" to files.any { file ->
+            file.displayStatus() == FileStatus.INVALID || file.displayStatus() == FileStatus.PROCESSING
+        },
         "allActiveFilesValid" to files
             .filter { it.status != FileStatus.EMPTY }
-            .let { it.isNotEmpty() && it.all { file -> file.status == FileStatus.VALID } },
+            .let { activeFiles ->
+                activeFiles.isNotEmpty() && activeFiles.all { file ->
+                    file.status == FileStatus.VALID && file.conflictGroups.isEmpty()
+                }
+            },
         "error" to error,
         "filter" to filter.normalizeScheduleFilter(),
     )
@@ -69,22 +76,31 @@ fun renderTemplate(templateName: String, model: Map<String, Any?>): String {
 private fun SheetsFile.toView(): FileView =
     FileView(
         fileId = fileId,
-        name = name,
-        status = status.name,
-        statusText = status.toText(),
+        name = name.withoutSpreadsheetExtension(),
+        status = displayStatus().name,
+        statusText = displayStatus().toText(),
         modifiedTime = modifiedTime.formatScheduleDate(),
         createdTime = uploadTime.formatScheduleDate(),
-        icon = status.toIcon(),
+        icon = displayStatus().toIcon(),
         canFixWithAi = canFixWithAi,
+        supportingText = conflictGroups
+            .takeIf { groups -> status != FileStatus.EMPTY && groups.isNotEmpty() }
+            ?.let { groups -> "Расписание с группами: ${groups.joinToString(", ")} уже существует" },
     )
+
+private fun String.withoutSpreadsheetExtension(): String =
+    replace(Regex("\\.(xlsx|xls)$", RegexOption.IGNORE_CASE), "")
 
 private fun List<SheetsFile>.filterByScheduleFilter(filter: String): List<SheetsFile> =
     when (filter.normalizeScheduleFilter()) {
-        FILTER_VALID -> filter { file -> file.status == FileStatus.VALID }
-        FILTER_INVALID -> filter { file -> file.status == FileStatus.INVALID }
+        FILTER_VALID -> filter { file -> file.displayStatus() == FileStatus.VALID }
+        FILTER_INVALID -> filter { file -> file.displayStatus() == FileStatus.INVALID }
         FILTER_DELETED -> filter { file -> file.status == FileStatus.EMPTY }
         else -> filter { file -> file.status != FileStatus.EMPTY }
     }
+
+private fun SheetsFile.displayStatus(): FileStatus =
+    if (status != FileStatus.EMPTY && conflictGroups.isNotEmpty()) FileStatus.INVALID else status
 
 private fun String.normalizeScheduleFilter(): String =
     when (lowercase()) {

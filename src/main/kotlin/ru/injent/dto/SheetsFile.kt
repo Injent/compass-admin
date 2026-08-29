@@ -11,4 +11,5 @@ data class SheetsFile(
     val uploadTime: Instant,
     val status: FileStatus,
     val canFixWithAi: Boolean,
+    val conflictGroups: List<String> = emptyList(),
 )

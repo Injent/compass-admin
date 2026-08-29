@@ -505,6 +505,14 @@ m3e-content-pane,
     white-space: nowrap;
 }
 
+.schedule-file-supporting-text {
+    display: block;
+    color: var(--md-sys-color-error);
+    font-size: 12px;
+    line-height: 16px;
+    margin-top: 4px;
+}
+
 .schedule-file-date {
     color: var(--md-sys-color-on-surface-variant);
     font-size: 14px;

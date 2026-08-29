@@ -6,6 +6,7 @@ import com.google.api.services.drive.model.File
 import com.google.api.services.sheets.v4.Sheets
 import com.google.api.services.sheets.v4.model.*
 import io.ktor.util.logging.*
+import kotlinx.serialization.json.Json
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,6 +15,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.injent.dto.FileStatus
 import ru.injent.dto.SheetsFile
+import ru.injent.service.ScheduleGroup
+import ru.injent.service.normalizedGroupName
 import ru.injent.service.validator.LegendValidator
 import ru.injent.service.validator.LessonValidator
 import ru.injent.service.validator.TeacherValidator
@@ -40,6 +43,7 @@ class NewGoogleService(
     private val fileMutexesGuard = Mutex()
     private val validationJobs = mutableMapOf<String, Job>()
     private val validationJobsGuard = Mutex()
+    private val groupConflictsMutex = Mutex()
 
     val files: StateFlow<List<SheetsFile>>
         field = MutableStateFlow(emptyList())
@@ -49,6 +53,7 @@ class NewGoogleService(
         val loadedFiles = getAllFiles(folder.id).getOrElse { return Result.failure(it) }
 
         files.value = loadedFiles.map(GoogleFile::toSheetsFile)
+        refreshGroupConflicts()
         return Result.success(Unit)
     }
 
@@ -128,10 +133,12 @@ class NewGoogleService(
                 async {
                     updateFileContent(fileId) {
                         appProperties[KEY_STATUS] = FileStatus.EMPTY.toString()
+                        appProperties[KEY_CONFLICT_GROUPS] = encodeConflictGroups(emptyList())
                     }.getOrThrow()
                 }
             }
             .awaitAll()
+        refreshGroupConflicts()
         Unit
     }
 
@@ -205,6 +212,7 @@ class NewGoogleService(
                     }
                 }
                 listOf(updateStatusDeferred, updateSheetsDeferred).awaitAll()
+                refreshGroupConflicts()
                 Unit
             }
         } finally {
@@ -363,6 +371,9 @@ class NewGoogleService(
                     canFixWithAi = contentScope.appProperties[KEY_CAN_FIX_WITH_AI]
                         ?.toBooleanStrictOrNull()
                         ?: file.canFixWithAi,
+                    conflictGroups = contentScope.appProperties[KEY_CONFLICT_GROUPS]
+                        ?.let(::decodeConflictGroups)
+                        ?: file.conflictGroups,
                 )
             }
         }
@@ -415,6 +426,60 @@ class NewGoogleService(
             .setFields("files(id, name, appProperties, modifiedTime)")
             .execute()
             .files
+    }
+
+    private suspend fun refreshGroupConflicts() = groupConflictsMutex.withLock {
+        val activeFiles = files.value.filter { file -> file.status != FileStatus.EMPTY }
+        if (activeFiles.isEmpty()) return@withLock
+
+        val groupsByFile = mutableMapOf<String, List<ScheduleGroup>>()
+        for (file in activeFiles) {
+            val groups = try {
+                val sheet = getSheet(file.fileId).getOrNull() ?: continue
+                SheetValidatorScope(sheet).scheduleGroupNames()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                logger.error("failed to extract groups from '${file.fileId}'", error)
+                continue
+            }
+
+            groupsByFile[file.fileId] = groups.map { groupName ->
+                ScheduleGroup(
+                    name = groupName,
+                    normalizedName = groupName.normalizedGroupName(),
+                )
+            }
+        }
+
+        val conflictingGroupNames = groupsByFile
+            .flatMap { (fileId, groups) ->
+                groups.map { group -> group.normalizedName to fileId }
+            }
+            .groupBy({ it.first }, { it.second })
+            .filterValues { fileIds -> fileIds.distinct().size > 1 }
+            .keys
+
+        activeFiles.forEach { file ->
+            val groups = groupsByFile[file.fileId] ?: return@forEach
+            val conflictGroups = groups
+                .filter { group -> group.normalizedName in conflictingGroupNames }
+                .map(ScheduleGroup::name)
+                .distinct()
+                .sorted()
+
+            if (file.conflictGroups == conflictGroups) return@forEach
+
+            try {
+                updateFileContent(file.fileId) {
+                    appProperties[KEY_CONFLICT_GROUPS] = encodeConflictGroups(conflictGroups)
+                }.getOrThrow()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                logger.error("failed to update group conflicts for '${file.fileId}'", error)
+            }
+        }
     }
 
     private suspend fun getWorkspaceFolder() = runResulting("get workspace folder") {
@@ -478,12 +543,16 @@ private const val SPREADSHEET_MIME = "application/vnd.google-apps.spreadsheet"
 private const val KEY_STATUS = "status"
 private const val KEY_UPLOAD_TIME = "uploadTime"
 private const val KEY_CAN_FIX_WITH_AI = "canFixWithAi"
+private const val KEY_CONFLICT_GROUPS = "conflictGroups"
 
 private val GoogleFile.status: FileStatus
     get() = runCatching { appProperties?.get(KEY_STATUS)?.let(FileStatus::valueOf) }.getOrNull() ?: FileStatus.EMPTY
 
 private val GoogleFile.canFixWithAi: Boolean
     get() = appProperties?.get(KEY_CAN_FIX_WITH_AI)?.toBooleanStrictOrNull() ?: false
+
+private val GoogleFile.conflictGroups: List<String>
+    get() = decodeConflictGroups(appProperties?.get(KEY_CONFLICT_GROUPS))
 
 private val GoogleFile.modifiedAtTime: Instant
     get() = modifiedTime?.value?.let(Instant::fromEpochMilliseconds) ?: Clock.System.now()
@@ -501,7 +570,17 @@ private fun GoogleFile.toSheetsFile() = SheetsFile(
     uploadTime = uploadTime,
     status = status,
     canFixWithAi = canFixWithAi,
+    conflictGroups = conflictGroups,
 )
+
+private fun encodeConflictGroups(groups: List<String>): String =
+    Json.encodeToString(groups)
+
+private fun decodeConflictGroups(value: String?): List<String> =
+    value?.let { encoded ->
+        runCatching { Json.decodeFromString<List<String>>(encoded) }
+            .getOrDefault(emptyList())
+    }.orEmpty()
 
 @Suppress("FunctionName")
 private fun CellValueRequest(

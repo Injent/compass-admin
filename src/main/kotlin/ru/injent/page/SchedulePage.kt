@@ -274,7 +274,9 @@ private suspend fun sendApprovedScheduleFiles(
             .filter { file -> file.status != FileStatus.EMPTY }
 
         require(files.isNotEmpty()) { "Нет файлов для отправки" }
-        require(files.all { file -> file.status == FileStatus.VALID }) { "Все файлы должны быть проверены без ошибок" }
+        require(files.all { file ->
+            file.status == FileStatus.VALID && file.conflictGroups.isEmpty()
+        }) { "Все файлы должны быть проверены без ошибок и не содержать конфликтующих групп" }
 
         approvalState.value = ScheduleApprovalState.running(10)
         httpClient.post(appConfig.compassApiConfig.approveScheduleUrl()) {
@@ -409,6 +411,7 @@ private suspend fun uploadFilesToFreeSlots(
                 appProperties[KEY_STATUS] = FileStatus.PROCESSING.name
                 appProperties[KEY_UPLOAD_TIME] = Clock.System.now().toEpochMilliseconds().toString()
                 appProperties[KEY_CAN_FIX_WITH_AI] = false.toString()
+                appProperties[KEY_CONFLICT_GROUPS] = "[]"
             }.getOrThrow()
             applicationScope.launch {
                 googleService.test(target.fileId, sheetValidators)
@@ -476,6 +479,7 @@ private data class UploadResult(
 private const val KEY_STATUS = "status"
 private const val KEY_UPLOAD_TIME = "uploadTime"
 private const val KEY_CAN_FIX_WITH_AI = "canFixWithAi"
+private const val KEY_CONFLICT_GROUPS = "conflictGroups"
 
 private val ZipContentType = ContentType.parse("application/zip")
 private val XlsxContentType = ContentType.parse("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

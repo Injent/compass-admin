@@ -60,7 +60,6 @@ private fun configModel(
 private fun Parameters.toRemoteConfig(): RemoteConfig =
     RemoteConfig(
         termStartDate = get("termStartDate").orEmpty().trim(),
-        swapWeeks = get("swapWeeks").orEmpty().toBooleanStrictOrNull() ?: false,
         lastResetTimestamp = get("lastResetTimestamp").orEmpty().trim(),
         versionCode = get("versionCode").orEmpty().trim().toIntOrNull() ?: 0,
         downloadUrl = get("downloadUrl").orEmpty().trim(),

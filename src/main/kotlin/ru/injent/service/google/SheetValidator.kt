@@ -3,6 +3,7 @@ package ru.injent.service.google
 import com.google.api.services.sheets.v4.model.CellData
 import com.google.api.services.sheets.v4.model.GridRange
 import com.google.api.services.sheets.v4.model.Sheet
+import ru.injent.service.scheduleGroupNamesFromHeaders
 
 fun interface SheetValidator {
     fun SheetValidatorScope.validate()
@@ -159,6 +160,9 @@ data class Cell(
         return "Cell($rowIdx:$colIdx${if (isMerged) "$endRowIdx:$endColIdx" else ""} '$value')"
     }
 }
+
+internal fun SheetValidatorScope.scheduleGroupNames(): List<String> =
+    scheduleGroupNamesFromHeaders(rows)
 
 private fun String.normalizeCellValue(): String =
     replace(LINE_BREAKS_REGEX, " ")
