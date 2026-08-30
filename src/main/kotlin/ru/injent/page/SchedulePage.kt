@@ -1,6 +1,7 @@
 package ru.injent.page
 
 import io.ktor.client.*
+import io.ktor.client.plugins.ResponseException
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.http.*
@@ -13,7 +14,9 @@ import io.ktor.server.routing.*
 import io.ktor.server.sse.*
 import io.ktor.utils.io.jvm.javaio.*
 import io.ktor.utils.io.streams.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
@@ -28,6 +31,7 @@ import ru.injent.service.google.SheetValidator
 import ru.injent.service.wordcorrection.WordCorrectionService
 import java.net.URLEncoder
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.minutes
 
 fun Routing.schedulePage(
     googleService: NewGoogleService,
@@ -48,7 +52,11 @@ fun Routing.schedulePage(
         call.respond(
             FreeMarkerContent(
                 "schedule/schedule.html",
-                scheduleModel(googleService.files.value, filter = call.scheduleFilter)
+                scheduleModel(
+                    files = googleService.files.value,
+                    filter = call.scheduleFilter,
+                    groupsToRemove = googleService.groupsToRemove(),
+                )
             )
         )
     }
@@ -57,7 +65,11 @@ fun Routing.schedulePage(
         call.respond(
             FreeMarkerContent(
                 "schedule/schedule_list_container.html",
-                scheduleModel(googleService.files.value, filter = call.scheduleFilter)
+                scheduleModel(
+                    files = googleService.files.value,
+                    filter = call.scheduleFilter,
+                    groupsToRemove = googleService.groupsToRemove(),
+                )
             )
         )
     }
@@ -73,7 +85,12 @@ fun Routing.schedulePage(
             status = if (uploadResult.error == null) HttpStatusCode.OK else HttpStatusCode.BadRequest,
             message = FreeMarkerContent(
                 "schedule/schedule_list_container.html",
-                scheduleModel(googleService.files.value, uploadResult.error, call.scheduleFilter)
+                scheduleModel(
+                    files = googleService.files.value,
+                    error = uploadResult.error,
+                    filter = call.scheduleFilter,
+                    groupsToRemove = googleService.groupsToRemove(),
+                )
             )
         )
     }
@@ -97,7 +114,12 @@ fun Routing.schedulePage(
         call.respond(
             FreeMarkerContent(
                 "schedule/schedule_list_container.html",
-                scheduleModel(googleService.files.value, error, call.scheduleFilter)
+                scheduleModel(
+                    files = googleService.files.value,
+                    error = error,
+                    filter = call.scheduleFilter,
+                    groupsToRemove = googleService.groupsToRemove(),
+                )
             )
         )
     }
@@ -110,8 +132,7 @@ fun Routing.schedulePage(
             existingFile == null -> "Файл не найден"
             existingFile.status != FileStatus.EMPTY -> "Файл уже восстановлен"
             else -> try {
-                googleService.restore(fileId)
-                null
+                googleService.restore(fileId).exceptionOrNull()?.message
             } catch (error: Exception) {
                 error.message
             }
@@ -120,7 +141,12 @@ fun Routing.schedulePage(
         call.respond(
             FreeMarkerContent(
                 "schedule/schedule_list_container.html",
-                scheduleModel(googleService.files.value, error, call.scheduleFilter)
+                scheduleModel(
+                    files = googleService.files.value,
+                    error = error,
+                    filter = call.scheduleFilter,
+                    groupsToRemove = googleService.groupsToRemove(),
+                )
             )
         )
     }
@@ -168,8 +194,22 @@ fun Routing.schedulePage(
 
     sse("/schedule/list/sse") {
         googleService.files
-            .map { files -> scheduleModel(files, filter = call.scheduleFilter) }
-            .onStart { emit(scheduleModel(googleService.files.value, filter = call.scheduleFilter)) }
+            .map { files ->
+                scheduleModel(
+                    files = files,
+                    filter = call.scheduleFilter,
+                    groupsToRemove = googleService.groupsToRemove(),
+                )
+            }
+            .onStart {
+                emit(
+                    scheduleModel(
+                        files = googleService.files.value,
+                        filter = call.scheduleFilter,
+                        groupsToRemove = googleService.groupsToRemove(),
+                    )
+                )
+            }
             .drop(1)
             .collectLatest { model ->
                 send(
@@ -180,7 +220,9 @@ fun Routing.schedulePage(
     }
 
     post("/schedule/approve") {
-        if (approvalState.value.status == ScheduleApprovalStatus.RUNNING) {
+        if (approvalState.value.status == ScheduleApprovalStatus.RUNNING ||
+            approvalState.value.status == ScheduleApprovalStatus.SUCCESS
+        ) {
             call.respond(HttpStatusCode.Accepted)
             return@post
         }
@@ -269,7 +311,8 @@ private suspend fun sendApprovedScheduleFiles(
     httpClient: HttpClient,
     approvalState: MutableStateFlow<ScheduleApprovalState>,
 ) {
-    runCatching {
+    try {
+        googleService.refreshScheduleGroups().getOrThrow()
         val files = googleService.files.value
             .filter { file -> file.status != FileStatus.EMPTY }
 
@@ -277,6 +320,7 @@ private suspend fun sendApprovedScheduleFiles(
         require(files.all { file ->
             file.status == FileStatus.VALID && file.conflictGroups.isEmpty()
         }) { "Все файлы должны быть проверены без ошибок и не содержать конфликтующих групп" }
+        val groupsToRemove = googleService.groupsToRemove()
 
         approvalState.value = ScheduleApprovalState.running(10)
         httpClient.post(appConfig.compassApiConfig.approveScheduleUrl()) {
@@ -302,12 +346,24 @@ private suspend fun sendApprovedScheduleFiles(
             )
         }
 
+        if (groupsToRemove.isNotEmpty()) {
+            approvalState.value = ScheduleApprovalState.running(80)
+            sendRemovedGroupsWithRetry(
+                appConfig = appConfig,
+                httpClient = httpClient,
+                normalizedGroupNames = groupsToRemove,
+            )
+            googleService.deleteSyncedGroups(groupsToRemove)
+        }
+
         approvalState.value = ScheduleApprovalState(
             status = ScheduleApprovalStatus.SUCCESS,
             progress = 100,
             message = "Расписание отправлено"
         )
-    }.onFailure { error ->
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
         approvalState.value = ScheduleApprovalState(
             status = ScheduleApprovalStatus.ERROR,
             progress = approvalState.value.progress,
@@ -316,8 +372,50 @@ private suspend fun sendApprovedScheduleFiles(
     }
 }
 
+private suspend fun sendRemovedGroupsWithRetry(
+    appConfig: AppConfig,
+    httpClient: HttpClient,
+    normalizedGroupNames: List<String>,
+) {
+    var lastStatus: HttpStatusCode? = null
+    var lastError: Throwable? = null
+
+    repeat(REMOVE_GROUPS_MAX_ATTEMPTS) { attempt ->
+        try {
+            val status = httpClient.post(appConfig.compassApiConfig.removeGroupsUrl()) {
+                header(HttpHeaders.Authorization, "Bearer ${appConfig.compassApiConfig.apiKey}")
+                contentType(ContentType.Application.Json)
+                setBody(normalizedGroupNames)
+            }.status
+
+            if (status == HttpStatusCode.OK) return
+            lastStatus = status
+        } catch (error: ResponseException) {
+            lastStatus = error.response.status
+            lastError = error
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            lastError = error
+        }
+
+        if (attempt < REMOVE_GROUPS_MAX_ATTEMPTS - 1) {
+            delay(REMOVE_GROUPS_RETRY_DELAY)
+        }
+    }
+
+    val reason = lastStatus
+        ?.let { status -> "статус ${status.value}" }
+        ?: lastError?.message
+        ?: "неизвестная ошибка"
+    error("Не удалось удалить группы в Compass: $reason")
+}
+
 private fun CompassApiConfig.approveScheduleUrl(): String =
     host.trimEnd('/') + "/uploadNewSchedules"
+
+private fun CompassApiConfig.removeGroupsUrl(): String =
+    host.trimEnd('/') + "/removeGroups"
 
 private fun multipartFileDisposition(name: String, fileName: String): String {
     val fallback = fileName.replace(Regex("""[^\w.\- ]"""), "_")
@@ -352,6 +450,10 @@ private enum class ScheduleApprovalStatus {
     SUCCESS,
     ERROR,
 }
+
+private const val REMOVE_GROUPS_RETRY_COUNT = 3
+private const val REMOVE_GROUPS_MAX_ATTEMPTS = REMOVE_GROUPS_RETRY_COUNT + 1
+private val REMOVE_GROUPS_RETRY_DELAY = 10.minutes
 
 private fun Parameters.toCellReplacements(): List<CellReplacement> {
     val rowIndexes = getAll("rowIdx").orEmpty()

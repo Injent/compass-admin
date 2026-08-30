@@ -16,6 +16,7 @@ import kotlinx.coroutines.sync.withLock
 import ru.injent.dto.FileStatus
 import ru.injent.dto.SheetsFile
 import ru.injent.service.ScheduleGroup
+import ru.injent.service.ScheduleGroupService
 import ru.injent.service.normalizedGroupName
 import ru.injent.service.validator.LegendValidator
 import ru.injent.service.validator.LessonValidator
@@ -37,6 +38,7 @@ class NewGoogleService(
     private val legendValidator: LegendValidator,
     private val lessonValidator: LessonValidator,
     private val teacherValidator: TeacherValidator,
+    private val scheduleGroupService: ScheduleGroupService,
 ) {
 
     private val fileMutexes = mutableMapOf<String, Mutex>()
@@ -53,6 +55,7 @@ class NewGoogleService(
         val loadedFiles = getAllFiles(folder.id).getOrElse { return Result.failure(it) }
 
         files.value = loadedFiles.map(GoogleFile::toSheetsFile)
+        syncLoadedFileGroups()
         refreshGroupConflicts()
         return Result.success(Unit)
     }
@@ -138,13 +141,34 @@ class NewGoogleService(
                 }
             }
             .awaitAll()
+        scheduleGroupService.markFilesDeleted(fileIds)
         refreshGroupConflicts()
         Unit
     }
 
-    suspend fun restore(fileId: String) {
+    fun groupsToRemove(): List<String> = scheduleGroupService.groupsToRemove()
+
+    fun deleteSyncedGroups(normalizedGroupNames: Collection<String>) {
+        scheduleGroupService.deleteSyncedGroups(normalizedGroupNames)
+    }
+
+    suspend fun refreshScheduleGroups(): Result<Unit> = runResulting("sync schedule groups") {
+        files.value
+            .filter { file -> file.status != FileStatus.EMPTY }
+            .forEach { file ->
+                val sheet = getSheet(file.fileId).getOrThrow()
+                scheduleGroupService.syncGroups(
+                    fileId = file.fileId,
+                    groupNames = SheetValidatorScope(sheet).scheduleGroupNames(),
+                )
+            }
+        refreshGroupConflicts()
+        Unit
+    }
+
+    suspend fun restore(fileId: String): Result<Unit> {
         val sheetValidators = listOf(legendValidator, lessonValidator, teacherValidator)
-        test(fileId, sheetValidators)
+        return test(fileId, sheetValidators)
     }
 
     /**
@@ -166,6 +190,7 @@ class NewGoogleService(
                 val sheet = getSheet(fileId).getOrThrow()
 
                 val scope = SheetValidatorScope(sheet)
+                val groupNames = scope.scheduleGroupNames()
                 var canFixWithAi = false
                 validators.forEach { validator ->
                     val errorsBefore = scope.getAccumulatedErrors().size
@@ -212,6 +237,7 @@ class NewGoogleService(
                     }
                 }
                 listOf(updateStatusDeferred, updateSheetsDeferred).awaitAll()
+                scheduleGroupService.syncGroups(fileId, groupNames)
                 refreshGroupConflicts()
                 Unit
             }
@@ -434,15 +460,7 @@ class NewGoogleService(
 
         val groupsByFile = mutableMapOf<String, List<ScheduleGroup>>()
         for (file in activeFiles) {
-            val groups = try {
-                val sheet = getSheet(file.fileId).getOrNull() ?: continue
-                SheetValidatorScope(sheet).scheduleGroupNames()
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                logger.error("failed to extract groups from '${file.fileId}'", error)
-                continue
-            }
+            val groups = readGroupNames(file.fileId) ?: continue
 
             groupsByFile[file.fileId] = groups.map { groupName ->
                 ScheduleGroup(
@@ -480,6 +498,32 @@ class NewGoogleService(
                 logger.error("failed to update group conflicts for '${file.fileId}'", error)
             }
         }
+    }
+
+    private suspend fun syncLoadedFileGroups() {
+        files.value
+            .filter { file -> file.status != FileStatus.EMPTY }
+            .forEach { file ->
+                val groupNames = readGroupNames(file.fileId) ?: return@forEach
+                try {
+                    scheduleGroupService.syncGroups(file.fileId, groupNames)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    logger.error("failed to sync groups for '${file.fileId}'", error)
+                }
+            }
+    }
+
+    private suspend fun readGroupNames(fileId: String): List<String>? = try {
+        getSheet(fileId).getOrNull()?.let { sheet ->
+            SheetValidatorScope(sheet).scheduleGroupNames()
+        }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
+        logger.error("failed to extract groups from '$fileId'", error)
+        null
     }
 
     private suspend fun getWorkspaceFolder() = runResulting("get workspace folder") {

@@ -23,7 +23,12 @@ data class FileView(
     val supportingText: String?,
 )
 
-fun scheduleModel(files: List<SheetsFile>, error: String? = null, filter: String = FILTER_ALL): Map<String, Any?> =
+fun scheduleModel(
+    files: List<SheetsFile>,
+    error: String? = null,
+    filter: String = FILTER_ALL,
+    groupsToRemove: List<String> = emptyList(),
+): Map<String, Any?> =
     mapOf(
         "files" to files.filterByScheduleFilter(filter).map(SheetsFile::toView),
         "hasUnreadyFiles" to files.any { file ->
@@ -35,7 +40,8 @@ fun scheduleModel(files: List<SheetsFile>, error: String? = null, filter: String
                 activeFiles.isNotEmpty() && activeFiles.all { file ->
                     file.status == FileStatus.VALID && file.conflictGroups.isEmpty()
                 }
-            },
+        },
+        "groupsToRemove" to groupsToRemove,
         "error" to error,
         "filter" to filter.normalizeScheduleFilter(),
     )
@@ -85,7 +91,7 @@ private fun SheetsFile.toView(): FileView =
         canFixWithAi = canFixWithAi,
         supportingText = conflictGroups
             .takeIf { groups -> status != FileStatus.EMPTY && groups.isNotEmpty() }
-            ?.let { groups -> "Расписание с группами: ${groups.joinToString(", ")} уже существует" },
+            ?.let { groups -> "расписание с группами: ${groups.joinToString(", ")} уже существует" },
     )
 
 private fun String.withoutSpreadsheetExtension(): String =

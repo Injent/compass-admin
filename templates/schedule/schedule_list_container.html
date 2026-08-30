@@ -32,9 +32,15 @@
     </m3e-filter-chip-set>
     <div id="schedule-approve-button-wrapper" <#if !allActiveFilesValid>hidden</#if>>
     <m3e-button id="schedule-approve-button" variant="tonal">
-      <m3e-dialog-trigger for="schedule-approve-dialog">Одобрить</m3e-dialog-trigger>
+      <m3e-dialog-trigger for="schedule-approve-dialog">Подтвердить расписание</m3e-dialog-trigger>
     </m3e-button>
     </div>
   </div>
+  <#if groupsToRemove?has_content>
+    <div class="schedule-remove-groups-notice">
+      При подтверждении будут удалены группы:
+      <#list groupsToRemove as group>${group?html}<#sep>, </#list>
+    </div>
+  </#if>
   <#include "/schedule/schedule_list.html">
 </div>

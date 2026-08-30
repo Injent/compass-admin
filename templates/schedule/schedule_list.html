@@ -35,7 +35,11 @@
   </div>
 </#macro>
 
-<div id="schedule-list" data-has-unready-files="${hasUnreadyFiles?c}" data-all-active-files-valid="${allActiveFilesValid?c}" sse-swap="ScheduleListUpdate" hx-swap="outerHTML">
+<div id="schedule-list"
+     data-has-unready-files="${hasUnreadyFiles?c}"
+     data-all-active-files-valid="${allActiveFilesValid?c}"
+     data-groups-to-remove="<#if groupsToRemove?has_content>${groupsToRemove?join(', ')?html}</#if>"
+     sse-swap="ScheduleListUpdate" hx-swap="outerHTML">
   <style>
     @keyframes slow-spin {
       from { transform: rotate(0deg); }

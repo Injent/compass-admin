@@ -160,6 +160,11 @@ m3e-nav-rail > .logout-form {
     height: 48px;
 }
 
+#file-search-bar {
+    flex: 1 1 320px;
+    margin-right: 0;
+}
+
 .config-search-bar {
     opacity: 0;
     pointer-events: none;
@@ -169,6 +174,20 @@ m3e-nav-rail > .logout-form {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+.schedule-page-header {
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.schedule-page-header .actions-wrapper {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.schedule-page-header m3e-button[hidden] {
+    display: none !important;
 }
 
 m3e-menu-item[hidden] {
@@ -258,6 +277,13 @@ m3e-content-pane,
 .schedule-approve-progress-content {
     display: grid;
     gap: 16px;
+}
+
+.schedule-remove-groups-notice {
+    margin-top: 12px;
+    color: var(--md-sys-color-error);
+    font-size: 14px;
+    line-height: 20px;
 }
 
 #schedule-list > m3e-action-list[hidden],
@@ -729,6 +755,20 @@ m3e-content-pane,
 }
 
 @media (max-width: 760px) {
+    .schedule-page-header {
+        align-items: stretch;
+        padding-right: 0;
+    }
+
+    #file-search-bar {
+        flex-basis: 100%;
+        max-width: none;
+    }
+
+    .schedule-page-header .actions-wrapper {
+        width: 100%;
+    }
+
     .schedule-workspace {
         position: relative;
     }
