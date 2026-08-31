@@ -365,13 +365,17 @@ private suspend fun sendApprovedScheduleFiles(
         val groupsToRemove = googleService.groupsToRemove()
 
         approvalState.value = ScheduleApprovalState.running(10)
-        val scheduleResponse = sendScheduleWithRetry(
-            googleService = googleService,
-            appConfig = appConfig,
-            httpClient = httpClient,
-            files = files,
-            logger = logger,
-        )
+
+        var scheduleResponse: CompassApiResponse? = null
+        if (files.isNotEmpty()) {
+            scheduleResponse = sendScheduleWithRetry(
+                googleService = googleService,
+                appConfig = appConfig,
+                httpClient = httpClient,
+                files = files,
+                logger = logger,
+            )
+        }
 
         var removedGroupsResponse: CompassApiResponse? = null
         if (groupsToRemove.isNotEmpty()) {
@@ -391,7 +395,7 @@ private suspend fun sendApprovedScheduleFiles(
         logger.info(
             "Schedule submission completed: filesSent=${files.size}, " +
                 "removedGroups=$removedGroupsText, " +
-                "uploadNewSchedules=${scheduleResponse.toLogText()}, " +
+                "uploadNewSchedules=${scheduleResponse?.toLogText() ?: "not requested (empty schedule)"}, " +
                 "removeGroups=${removedGroupsResponse?.toLogText() ?: "not requested"}"
         )
         approvalState.value = ScheduleApprovalState(

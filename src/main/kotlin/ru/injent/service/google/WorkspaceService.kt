@@ -165,7 +165,15 @@ class NewGoogleService(
         Unit
     }
 
-    fun groupsToRemove(): List<String> = scheduleGroupService.groupsToRemove()
+    fun groupsToRemove(): List<String> {
+        val emptyFileIds = files.value
+            .filter { it.status == FileStatus.EMPTY }
+            .map { it.fileId }
+        if (emptyFileIds.isNotEmpty()) {
+            scheduleGroupService.markFilesDeleted(emptyFileIds)
+        }
+        return scheduleGroupService.groupsToRemove()
+    }
 
     fun deleteSyncedGroups(normalizedGroupNames: Collection<String>) {
         scheduleGroupService.deleteSyncedGroups(normalizedGroupNames)
