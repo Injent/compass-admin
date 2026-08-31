@@ -1,4 +1,7 @@
-<div id="schedule-list-container" hx-ext="sse" sse-connect="/schedule/list/sse<#if filter != "all">?f=${filter}</#if>">
+<div id="schedule-list-container"
+     data-groups-to-remove="<#if groupsToRemove?has_content>${groupsToRemove?join(', ')?html}</#if>"
+     hx-ext="sse"
+     sse-connect="/schedule/list/sse<#if filter != "all">?f=${filter}</#if>">
   <div class="schedule-filter-row">
     <m3e-filter-chip-set id="status-filter-chips" aria-label="Фильтр по статусу">
       <m3e-filter-chip id="chip-all"
@@ -36,11 +39,9 @@
     </m3e-button>
     </div>
   </div>
-  <#if groupsToRemove?has_content>
-    <div class="schedule-remove-groups-notice">
-      При подтверждении будут удалены группы:
-      <#list groupsToRemove as group>${group?html}<#sep>, </#list>
-    </div>
-  </#if>
+  <div id="schedule-list-groups-notice" class="schedule-remove-groups-notice" <#if !groupsToRemove?has_content>hidden</#if>>
+    При подтверждении будут удалены группы:
+    <span id="schedule-list-groups"> <#list groupsToRemove as group>${group?html}<#sep>, </#list></span>
+  </div>
   <#include "/schedule/schedule_list.html">
 </div>

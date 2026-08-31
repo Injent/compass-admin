@@ -65,6 +65,7 @@ fun Application.configureApp() {
         allowHeader(HttpHeaders.ContentType)
         allowHeader(HttpHeaders.Origin)
         allowHeader(HttpHeaders.Authorization)
+        allowHeader("X-API-Key")
         allowHeader(HttpHeaders.AccessControlAllowOrigin)
 
         anyHost()
@@ -114,7 +115,7 @@ fun Application.configureApp() {
     }
 
     val authService = get<AuthService>()
-    installAuthGuard(authService)
+    installAuthGuard(authService, appConfig.googleCallbackApiKey)
 
     val googleService = get<NewGoogleService>()
     val wordCorrectionService = get<WordCorrectionService>()
@@ -130,7 +131,7 @@ fun Application.configureApp() {
         staticAssets()
         authPage(authService)
         indexPage()
-        schedulePage(googleService, wordCorrectionService, sheetValidators, appConfig, httpClient, this@configureApp)
+        schedulePage(googleService, wordCorrectionService, sheetValidators, appConfig, httpClient, this@configureApp, log)
         teachersPage(teacherService)
         configPage(remoteConfigService)
         editorPage(googleService)

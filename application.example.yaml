@@ -12,6 +12,7 @@ gigachat:
 compassapi:
   host: "https://api.example.com"
   apikey: "${COMPASS_API_KEY}"
+google-callback-api-key: "${GOOGLE_CALLBACK_API_KEY}"
 access:
   - role: "SUPERUSER"
     login: "admin"

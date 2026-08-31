@@ -6,9 +6,9 @@
       <#if status == "RUNNING">
         Отправка расписания: ${progress}%
       <#elseif status == "SUCCESS">
-        Расписание отправлено
+        ${(message!"Расписание отправлено")?html}
       <#elseif status == "ERROR">
-        ${message!"Отправка расписания прервана"}
+        ${(message!"Отправка расписания прервана")?html}
       </#if>
     </div>
   </div>

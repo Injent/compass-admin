@@ -8,8 +8,11 @@ import com.google.api.services.sheets.v4.model.*
 import io.ktor.util.logging.*
 import kotlinx.serialization.json.Json
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -46,17 +49,32 @@ class NewGoogleService(
     private val validationJobs = mutableMapOf<String, Job>()
     private val validationJobsGuard = Mutex()
     private val groupConflictsMutex = Mutex()
+    private val scheduleGroupVersion = MutableStateFlow(0)
 
     val files: StateFlow<List<SheetsFile>>
         field = MutableStateFlow(emptyList())
+
+    val filesLoaded: StateFlow<Boolean>
+        field = MutableStateFlow(false)
+
+    val scheduleUpdates: Flow<List<SheetsFile>>
+        get() = merge(files, scheduleGroupVersion.map { files.value })
 
     suspend fun loadFiles(): Result<Unit> {
         val folder = getWorkspaceFolder().getOrElse { return Result.failure(it) }
         val loadedFiles = getAllFiles(folder.id).getOrElse { return Result.failure(it) }
 
         files.value = loadedFiles.map(GoogleFile::toSheetsFile)
+        scheduleGroupService.markFilesDeleted(
+            files.value
+                .filter { file -> file.status == FileStatus.EMPTY }
+                .map { file -> file.fileId }
+        )
+        notifyScheduleGroupUpdate()
         syncLoadedFileGroups()
         refreshGroupConflicts()
+        filesLoaded.value = true
+        notifyScheduleGroupUpdate()
         return Result.success(Unit)
     }
 
@@ -142,6 +160,7 @@ class NewGoogleService(
             }
             .awaitAll()
         scheduleGroupService.markFilesDeleted(fileIds)
+        notifyScheduleGroupUpdate()
         refreshGroupConflicts()
         Unit
     }
@@ -150,6 +169,7 @@ class NewGoogleService(
 
     fun deleteSyncedGroups(normalizedGroupNames: Collection<String>) {
         scheduleGroupService.deleteSyncedGroups(normalizedGroupNames)
+        notifyScheduleGroupUpdate()
     }
 
     suspend fun refreshScheduleGroups(): Result<Unit> = runResulting("sync schedule groups") {
@@ -162,6 +182,7 @@ class NewGoogleService(
                     groupNames = SheetValidatorScope(sheet).scheduleGroupNames(),
                 )
             }
+        notifyScheduleGroupUpdate()
         refreshGroupConflicts()
         Unit
     }
@@ -238,6 +259,7 @@ class NewGoogleService(
                 }
                 listOf(updateStatusDeferred, updateSheetsDeferred).awaitAll()
                 scheduleGroupService.syncGroups(fileId, groupNames)
+                notifyScheduleGroupUpdate()
                 refreshGroupConflicts()
                 Unit
             }
@@ -513,6 +535,11 @@ class NewGoogleService(
                     logger.error("failed to sync groups for '${file.fileId}'", error)
                 }
             }
+        notifyScheduleGroupUpdate()
+    }
+
+    private fun notifyScheduleGroupUpdate() {
+        scheduleGroupVersion.update { version -> version + 1 }
     }
 
     private suspend fun readGroupNames(fileId: String): List<String>? = try {

@@ -4,6 +4,7 @@ import io.ktor.client.*
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.*
 import io.ktor.http.content.*
 import io.ktor.server.application.*
@@ -12,6 +13,7 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.sse.*
+import io.ktor.util.logging.Logger
 import io.ktor.utils.io.jvm.javaio.*
 import io.ktor.utils.io.streams.*
 import kotlinx.coroutines.CancellationException
@@ -23,6 +25,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
 import ru.injent.dto.FileStatus
+import ru.injent.dto.SheetsFile
 import ru.injent.service.config.AppConfig
 import ru.injent.service.config.CompassApiConfig
 import ru.injent.service.google.CellReplacement
@@ -32,6 +35,7 @@ import ru.injent.service.wordcorrection.WordCorrectionService
 import java.net.URLEncoder
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 fun Routing.schedulePage(
     googleService: NewGoogleService,
@@ -40,6 +44,7 @@ fun Routing.schedulePage(
     appConfig: AppConfig,
     httpClient: HttpClient,
     applicationScope: CoroutineScope,
+    logger: Logger,
 ) {
     val approvalState = MutableStateFlow(ScheduleApprovalState.idle())
 
@@ -56,6 +61,7 @@ fun Routing.schedulePage(
                     files = googleService.files.value,
                     filter = call.scheduleFilter,
                     groupsToRemove = googleService.groupsToRemove(),
+                    filesLoaded = googleService.filesLoaded.value,
                 )
             )
         )
@@ -69,6 +75,7 @@ fun Routing.schedulePage(
                     files = googleService.files.value,
                     filter = call.scheduleFilter,
                     groupsToRemove = googleService.groupsToRemove(),
+                    filesLoaded = googleService.filesLoaded.value,
                 )
             )
         )
@@ -90,6 +97,7 @@ fun Routing.schedulePage(
                     error = uploadResult.error,
                     filter = call.scheduleFilter,
                     groupsToRemove = googleService.groupsToRemove(),
+                    filesLoaded = googleService.filesLoaded.value,
                 )
             )
         )
@@ -119,6 +127,7 @@ fun Routing.schedulePage(
                     error = error,
                     filter = call.scheduleFilter,
                     groupsToRemove = googleService.groupsToRemove(),
+                    filesLoaded = googleService.filesLoaded.value,
                 )
             )
         )
@@ -146,6 +155,7 @@ fun Routing.schedulePage(
                     error = error,
                     filter = call.scheduleFilter,
                     groupsToRemove = googleService.groupsToRemove(),
+                    filesLoaded = googleService.filesLoaded.value,
                 )
             )
         )
@@ -193,12 +203,13 @@ fun Routing.schedulePage(
     }
 
     sse("/schedule/list/sse") {
-        googleService.files
+        googleService.scheduleUpdates
             .map { files ->
                 scheduleModel(
                     files = files,
                     filter = call.scheduleFilter,
                     groupsToRemove = googleService.groupsToRemove(),
+                    filesLoaded = googleService.filesLoaded.value,
                 )
             }
             .onStart {
@@ -207,6 +218,7 @@ fun Routing.schedulePage(
                         files = googleService.files.value,
                         filter = call.scheduleFilter,
                         groupsToRemove = googleService.groupsToRemove(),
+                        filesLoaded = googleService.filesLoaded.value,
                     )
                 )
             }
@@ -238,7 +250,8 @@ fun Routing.schedulePage(
                 googleService = googleService,
                 appConfig = appConfig,
                 httpClient = httpClient,
-                approvalState = approvalState
+                approvalState = approvalState,
+                logger = logger,
             )
         }
 
@@ -310,45 +323,40 @@ private suspend fun sendApprovedScheduleFiles(
     appConfig: AppConfig,
     httpClient: HttpClient,
     approvalState: MutableStateFlow<ScheduleApprovalState>,
+    logger: Logger,
 ) {
     try {
+        logger.info("Schedule submission started")
+        require(googleService.filesLoaded.value) { "Расписание ещё загружается" }
         googleService.refreshScheduleGroups().getOrThrow()
         val files = googleService.files.value
             .filter { file -> file.status != FileStatus.EMPTY }
 
-        require(files.isNotEmpty()) { "Нет файлов для отправки" }
-        require(files.all { file ->
-            file.status == FileStatus.VALID && file.conflictGroups.isEmpty()
-        }) { "Все файлы должны быть проверены без ошибок и не содержать конфликтующих групп" }
+        val conflictGroups = files
+            .flatMap(SheetsFile::conflictGroups)
+            .distinct()
+            .sorted()
+        require(conflictGroups.isEmpty()) {
+            "Конфликтующие группы: ${conflictGroups.joinToString(", ")}"
+        }
+        require(files.all { file -> file.status == FileStatus.VALID }) {
+            "Все файлы должны быть проверены без ошибок"
+        }
         val groupsToRemove = googleService.groupsToRemove()
 
         approvalState.value = ScheduleApprovalState.running(10)
-        httpClient.post(appConfig.compassApiConfig.approveScheduleUrl()) {
-            header(HttpHeaders.Authorization, "Bearer ${appConfig.compassApiConfig.apiKey}")
-            setBody(
-                MultiPartFormDataContent(
-                    formData {
-                        files.forEach { file ->
-                            val fileName = file.name.ensureXlsxExtension()
-                            append(
-                                "files",
-                                InputProvider {
-                                    googleService.exportAsXlsx(file.fileId).asInput()
-                                },
-                                Headers.build {
-                                    append(HttpHeaders.ContentDisposition, multipartFileDisposition("files", fileName))
-                                    append(HttpHeaders.ContentType, XlsxContentType.toString())
-                                }
-                            )
-                        }
-                    }
-                )
-            )
-        }
+        val scheduleResponse = sendScheduleWithRetry(
+            googleService = googleService,
+            appConfig = appConfig,
+            httpClient = httpClient,
+            files = files,
+            logger = logger,
+        )
 
+        var removedGroupsResponse: CompassApiResponse? = null
         if (groupsToRemove.isNotEmpty()) {
             approvalState.value = ScheduleApprovalState.running(80)
-            sendRemovedGroupsWithRetry(
+            removedGroupsResponse = sendRemovedGroupsWithRetry(
                 appConfig = appConfig,
                 httpClient = httpClient,
                 normalizedGroupNames = groupsToRemove,
@@ -356,6 +364,16 @@ private suspend fun sendApprovedScheduleFiles(
             googleService.deleteSyncedGroups(groupsToRemove)
         }
 
+        val removedGroupsText = groupsToRemove
+            .takeIf(List<String>::isNotEmpty)
+            ?.joinToString(", ")
+            ?: "нет"
+        logger.info(
+            "Schedule submission completed: filesSent=${files.size}, " +
+                "removedGroups=$removedGroupsText, " +
+                "uploadNewSchedules=${scheduleResponse.toLogText()}, " +
+                "removeGroups=${removedGroupsResponse?.toLogText() ?: "not requested"}"
+        )
         approvalState.value = ScheduleApprovalState(
             status = ScheduleApprovalStatus.SUCCESS,
             progress = 100,
@@ -364,6 +382,7 @@ private suspend fun sendApprovedScheduleFiles(
     } catch (error: CancellationException) {
         throw error
     } catch (error: Throwable) {
+        logger.error("Schedule submission failed", error)
         approvalState.value = ScheduleApprovalState(
             status = ScheduleApprovalStatus.ERROR,
             progress = approvalState.value.progress,
@@ -372,27 +391,111 @@ private suspend fun sendApprovedScheduleFiles(
     }
 }
 
+private suspend fun sendScheduleWithRetry(
+    googleService: NewGoogleService,
+    appConfig: AppConfig,
+    httpClient: HttpClient,
+    files: List<SheetsFile>,
+    logger: Logger,
+): CompassApiResponse {
+    var lastStatus: HttpStatusCode? = null
+    var lastError: Throwable? = null
+    var lastResponseBody: String? = null
+
+    repeat(SCHEDULE_SEND_MAX_ATTEMPTS) { attempt ->
+        try {
+            logger.info("Schedule submission attempt ${attempt + 1} of $SCHEDULE_SEND_MAX_ATTEMPTS")
+            val response = httpClient.post(appConfig.compassApiConfig.approveScheduleUrl()) {
+                header(HttpHeaders.Authorization, "Bearer ${appConfig.compassApiConfig.apiKey}")
+                setBody(
+                    MultiPartFormDataContent(
+                        formData {
+                            files.forEach { file ->
+                                val fileName = file.name.ensureXlsxExtension()
+                                append(
+                                    "files",
+                                    InputProvider {
+                                        googleService.exportAsXlsx(file.fileId).asInput()
+                                    },
+                                    Headers.build {
+                                        append(HttpHeaders.ContentDisposition, multipartFileDisposition("files", fileName))
+                                        append(HttpHeaders.ContentType, XlsxContentType.toString())
+                                    }
+                                )
+                            }
+                        }
+                    )
+                )
+            }
+            val responseBody = response.bodyAsText()
+            if (response.status.value in 200..299) {
+                return CompassApiResponse(response.status, responseBody)
+            }
+
+            lastStatus = response.status
+            lastResponseBody = responseBody
+            logger.warn(
+                "Schedule submission attempt ${attempt + 1} failed: " +
+                    "status=${response.status.value}, response=${responseBody.toLogText()}"
+            )
+        } catch (error: ResponseException) {
+            lastStatus = error.response.status
+            lastError = error
+            lastResponseBody = error.response.bodyAsText()
+            logger.warn(
+                "Schedule submission attempt ${attempt + 1} failed: " +
+                    "status=${error.response.status.value}, response=${lastResponseBody.toLogText()}"
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            lastError = error
+            logger.warn("Schedule submission attempt ${attempt + 1} failed: ${error.message}")
+        }
+
+        if (attempt < SCHEDULE_SEND_MAX_ATTEMPTS - 1) {
+            delay(SCHEDULE_SEND_RETRY_DELAY)
+        }
+    }
+
+    val reason = lastStatus
+        ?.let { status -> "статус ${status.value}" }
+        ?: lastError?.message
+        ?: "неизвестная ошибка"
+    val responseDetails = lastResponseBody
+        ?.takeIf(String::isNotBlank)
+        ?.let { body -> ", response=${body.toLogText()}" }
+        .orEmpty()
+    error("Не удалось отправить расписание после $SCHEDULE_SEND_MAX_ATTEMPTS попыток: $reason$responseDetails")
+}
+
 private suspend fun sendRemovedGroupsWithRetry(
     appConfig: AppConfig,
     httpClient: HttpClient,
     normalizedGroupNames: List<String>,
-) {
+): CompassApiResponse {
     var lastStatus: HttpStatusCode? = null
     var lastError: Throwable? = null
+    var lastResponseBody: String? = null
 
     repeat(REMOVE_GROUPS_MAX_ATTEMPTS) { attempt ->
         try {
-            val status = httpClient.post(appConfig.compassApiConfig.removeGroupsUrl()) {
+            val response = httpClient.post(appConfig.compassApiConfig.removeGroupsUrl()) {
                 header(HttpHeaders.Authorization, "Bearer ${appConfig.compassApiConfig.apiKey}")
                 contentType(ContentType.Application.Json)
                 setBody(normalizedGroupNames)
-            }.status
+            }
+            val responseBody = response.bodyAsText()
 
-            if (status == HttpStatusCode.OK) return
-            lastStatus = status
+            if (response.status == HttpStatusCode.OK) {
+                return CompassApiResponse(response.status, responseBody)
+            }
+            lastStatus = response.status
+            lastResponseBody = responseBody
         } catch (error: ResponseException) {
             lastStatus = error.response.status
             lastError = error
+            lastResponseBody = error.response.bodyAsText()
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
@@ -408,8 +511,28 @@ private suspend fun sendRemovedGroupsWithRetry(
         ?.let { status -> "статус ${status.value}" }
         ?: lastError?.message
         ?: "неизвестная ошибка"
-    error("Не удалось удалить группы в Compass: $reason")
+    val responseDetails = lastResponseBody
+        ?.takeIf(String::isNotBlank)
+        ?.let { body -> ", response=${body.toLogText()}" }
+        .orEmpty()
+    error("Не удалось удалить группы в Compass: $reason$responseDetails")
 }
+
+private data class CompassApiResponse(
+    val status: HttpStatusCode,
+    val body: String,
+)
+
+private fun CompassApiResponse.toLogText(): String =
+    "status=${status.value}, response=${body.toLogText()}"
+
+private fun String?.toLogText(): String =
+    this
+        ?.trim()
+        ?.replace(Regex("\\s+"), " ")
+        ?.take(MAX_SERVER_RESPONSE_LENGTH)
+        ?.ifEmpty { "<empty>" }
+        ?: "<empty>"
 
 private fun CompassApiConfig.approveScheduleUrl(): String =
     host.trimEnd('/') + "/uploadNewSchedules"
@@ -454,6 +577,9 @@ private enum class ScheduleApprovalStatus {
 private const val REMOVE_GROUPS_RETRY_COUNT = 3
 private const val REMOVE_GROUPS_MAX_ATTEMPTS = REMOVE_GROUPS_RETRY_COUNT + 1
 private val REMOVE_GROUPS_RETRY_DELAY = 10.minutes
+private const val SCHEDULE_SEND_MAX_ATTEMPTS = 3
+private val SCHEDULE_SEND_RETRY_DELAY = 5.seconds
+private const val MAX_SERVER_RESPONSE_LENGTH = 500
 
 private fun Parameters.toCellReplacements(): List<CellReplacement> {
     val rowIndexes = getAll("rowIdx").orEmpty()

@@ -85,7 +85,10 @@
                           hx-post="/schedule/restore/${file.fileId?html}<#if filter != "all">?f=${filter}</#if>"
                           hx-target="#schedule-list-container"
                           hx-swap="outerHTML"
-                          hx-push-url="false">Восстановить</m3e-button>
+                          hx-push-url="false">
+                <m3e-circular-progress-indicator class="schedule-action-loader" indeterminate></m3e-circular-progress-indicator>
+                Восстановить
+              </m3e-button>
             </div>
           <#else>
             <div class="schedule-row-actions" slot="trailing">
@@ -95,6 +98,7 @@
                                  hx-target="#correction-pane-container"
                                  hx-swap="innerHTML"
                                  hx-push-url="false">
+                  <m3e-circular-progress-indicator class="schedule-action-loader" indeterminate></m3e-circular-progress-indicator>
                   <svg class="correction-open-icon" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 512 512" aria-hidden="true">
                     <path d="M0 0h512v512H0z" fill="none" />
                     <radialGradient id="SVGAklhae1G" cx="-80.789" cy="2.985" r="32" gradientTransform="rotate(18.683 -57.456 4644.03)scale(17.03 136.421)" gradientUnits="userSpaceOnUse">
@@ -110,6 +114,7 @@
               </#if>
               <m3e-icon-button class="download-file-button"
                                data-download-url="/schedule/download/${file.fileId?html}">
+                <m3e-circular-progress-indicator class="schedule-action-loader" indeterminate></m3e-circular-progress-indicator>
                 <m3e-icon name="download" variant="rounded"></m3e-icon>
               </m3e-icon-button>
             </div>

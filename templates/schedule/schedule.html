@@ -11,14 +11,17 @@
     </m3e-button>
     <m3e-button id="upload-btn" data-mode="upload">
       <m3e-icon slot="icon" id="schedule-main-action-icon" name="upload"></m3e-icon>
+      <m3e-circular-progress-indicator class="schedule-action-loader" indeterminate></m3e-circular-progress-indicator>
       Загрузить новый файл
     </m3e-button>
     <m3e-button id="download-all-button">
       <m3e-icon slot="icon" name="download" variant="rounded"></m3e-icon>
+      <m3e-circular-progress-indicator class="schedule-action-loader" indeterminate></m3e-circular-progress-indicator>
       Скачать все
     </m3e-button>
     <m3e-button id="delete-mode-button">
       <m3e-icon slot="icon" name="delete" variant="rounded"></m3e-icon>
+      <m3e-circular-progress-indicator class="schedule-action-loader" indeterminate></m3e-circular-progress-indicator>
       Удалить файлы
     </m3e-button>
   </div>
@@ -37,6 +40,7 @@
       <m3e-dialog-action return-value="cancel">Отмена</m3e-dialog-action>
     </m3e-button>
     <m3e-button variant="filled" id="download-all-confirm-button" autofocus>
+      <m3e-circular-progress-indicator class="schedule-action-loader" indeterminate></m3e-circular-progress-indicator>
       <m3e-dialog-action return-value="download">Скачать</m3e-dialog-action>
     </m3e-button>
   </div>
@@ -76,6 +80,7 @@
       <m3e-dialog-action return-value="cancel">Отмена</m3e-dialog-action>
     </m3e-button>
     <m3e-button id="schedule-approve-confirm-button" variant="filled" autofocus>
+      <m3e-circular-progress-indicator class="schedule-action-loader" indeterminate></m3e-circular-progress-indicator>
       Продолжить
     </m3e-button>
   </div>
@@ -98,6 +103,7 @@
   (function() {
     let deleteMode = false;
     let selectedIdsBeforeSwap = [];
+    let approvalSnackbarDismissTimer = null;
 
     const getPrimaryButton = () => document.getElementById('upload-btn');
     const getPrimaryIcon = () => document.getElementById('schedule-main-action-icon');
@@ -134,25 +140,64 @@
         }
       });
     };
+    const renderGroupsToRemove = (groups) => {
+      const normalizedGroups = groups || '';
+      const container = document.getElementById('schedule-list-container');
+      if (container) {
+        container.dataset.groupsToRemove = normalizedGroups;
+      }
+      const approvalNotice = document.getElementById('schedule-approve-groups-notice');
+      const approvalGroupsList = document.getElementById('schedule-approve-groups-list');
+      if (approvalNotice && approvalGroupsList) {
+        approvalGroupsList.textContent = normalizedGroups;
+        approvalNotice.hidden = normalizedGroups.length === 0;
+      }
+
+      const listNotice = document.getElementById('schedule-list-groups-notice');
+      const listGroups = document.getElementById('schedule-list-groups');
+      if (listNotice && listGroups) {
+        listGroups.textContent = normalizedGroups;
+        listNotice.hidden = normalizedGroups.length === 0;
+      }
+    };
     const updateApprovalGroupsNotice = () => {
       const list = document.getElementById('schedule-list');
-      const notice = document.getElementById('schedule-approve-groups-notice');
-      const groupsList = document.getElementById('schedule-approve-groups-list');
-      if (!list || !notice || !groupsList) return;
+      const container = document.getElementById('schedule-list-container');
+      if (!list && !container) return;
 
-      const groups = list.dataset.groupsToRemove || '';
-      groupsList.textContent = groups;
-      notice.hidden = groups.length === 0;
+      renderGroupsToRemove(
+        (list && list.dataset.groupsToRemove) || (container && container.dataset.groupsToRemove) || ''
+      );
+    };
+    const updateApprovalGroupsNoticeFromResponse = (responseText) => {
+      if (!responseText) return;
+
+      const responseDocument = new DOMParser().parseFromString(responseText, 'text/html');
+      const responseSource = responseDocument.querySelector('#schedule-list, #schedule-list-container');
+      if (responseSource) {
+        renderGroupsToRemove(responseSource.dataset.groupsToRemove || '');
+      }
     };
     const renderApproveProgressDialog = () => {
       const body = document.getElementById('schedule-approve-dialog-body');
       const actions = document.getElementById('schedule-approve-dialog-actions');
       if (body) {
-        body.innerHTML = '<div class="schedule-approve-progress-content"><m3e-linear-progress-indicator variant="wavy" value="0"></m3e-linear-progress-indicator><span>Файлы отправляются, можно закрыть страницу.</span></div>';
+        body.innerHTML = '<div class="schedule-approve-progress-content"><m3e-circular-progress-indicator class="schedule-approval-loader" indeterminate></m3e-circular-progress-indicator><m3e-linear-progress-indicator variant="wavy" value="0"></m3e-linear-progress-indicator><span>Файлы отправляются, можно закрыть страницу.</span></div>';
       }
       if (actions) {
         actions.innerHTML = '<m3e-button variant="outlined"><m3e-dialog-action return-value="close">Закрыть</m3e-dialog-action></m3e-button>';
       }
+    };
+    const renderApproveRetryDialog = () => {
+      const body = document.getElementById('schedule-approve-dialog-body');
+      const actions = document.getElementById('schedule-approve-dialog-actions');
+      if (body) {
+        body.innerHTML = 'После подтверждения расписание будет замещено новым на сервере, это действие нельзя будет отменить<div id="schedule-approve-groups-notice" class="schedule-remove-groups-notice" hidden>Также будут удалены группы: <span id="schedule-approve-groups-list"></span></div>';
+      }
+      if (actions) {
+        actions.innerHTML = '<m3e-button variant="outlined"><m3e-dialog-action return-value="cancel">Отмена</m3e-dialog-action></m3e-button><m3e-button id="schedule-approve-confirm-button" variant="filled" autofocus><m3e-circular-progress-indicator class="schedule-action-loader" indeterminate></m3e-circular-progress-indicator>Продолжить</m3e-button>';
+      }
+      updateApprovalGroupsNotice();
     };
     const applyApprovalStateFromSnackbar = () => {
       const snackbar = document.querySelector('#schedule-approval-snackbar .m3-snackbar[data-approval-status]');
@@ -171,6 +216,23 @@
         }
       }));
     };
+    const scheduleApprovalSnackbarDismissal = () => {
+      if (approvalSnackbarDismissTimer) {
+        clearTimeout(approvalSnackbarDismissTimer);
+        approvalSnackbarDismissTimer = null;
+      }
+
+      const container = document.getElementById('schedule-approval-snackbar');
+      const snackbar = container && container.querySelector('.m3-snackbar[data-approval-status="SUCCESS"]');
+      if (!snackbar) return;
+
+      approvalSnackbarDismissTimer = setTimeout(() => {
+        if (container && container.contains(snackbar)) {
+          container.innerHTML = '';
+        }
+        approvalSnackbarDismissTimer = null;
+      }, 5000);
+    };
 
     const setButtonLabel = (button, label) => {
       if (!button) return;
@@ -180,6 +242,13 @@
         .forEach(node => {
           node.textContent = ' ' + label;
         });
+    };
+    const setButtonLoading = (button, loading) => {
+      if (!button) return;
+
+      button.classList.toggle('schedule-action-loading', loading);
+      button.disabled = loading;
+      button.toggleAttribute('disabled', loading);
     };
     const setPrimaryButtonLabel = (label) => setButtonLabel(getPrimaryButton(), label);
 
@@ -384,20 +453,21 @@
             return;
           }
         }
+        setButtonLoading(downloadAllButton, true);
         window.location.href = '/schedule/download';
         return;
       }
 
       const downloadAllConfirmButton = e.target.closest('#download-all-confirm-button');
       if (downloadAllConfirmButton) {
+        setButtonLoading(downloadAllConfirmButton, true);
         window.location.href = '/schedule/download';
         return;
       }
 
       const approveConfirmButton = e.target.closest('#schedule-approve-confirm-button');
       if (approveConfirmButton) {
-        approveConfirmButton.disabled = true;
-        approveConfirmButton.setAttribute('disabled', '');
+        setButtonLoading(approveConfirmButton, true);
         renderApproveProgressDialog();
         setScheduleApprovalDisabled(true);
         fetch('/schedule/approve', { method: 'POST' })
@@ -425,6 +495,7 @@
       if (downloadFileButton) {
         const downloadUrl = downloadFileButton.getAttribute('data-download-url');
         if (downloadUrl) {
+          setButtonLoading(downloadFileButton, true);
           window.location.href = downloadUrl;
         }
         return;
@@ -566,6 +637,7 @@
     document.addEventListener('htmx:afterSwap', function(e) {
       if (e.detail.target.id === 'schedule-approval-snackbar') {
         applyApprovalStateFromSnackbar();
+        scheduleApprovalSnackbarDismissal();
         return;
       }
 
@@ -600,33 +672,39 @@
       if (applyForm) {
         const applyButton = applyForm.querySelector('.apply-corrections-button');
         if (applyButton) {
-          applyButton.setAttribute('disabled', '');
+          setButtonLoading(applyButton, true);
         }
+        return;
+      }
+
+      if (e.target.id === 'file-input') {
+        setButtonLoading(getPrimaryButton(), true);
         return;
       }
 
       if (e.target.id === 'schedule-delete-form') {
         const deleteButton = getDeleteButton();
         if (deleteButton) {
-          deleteButton.disabled = true;
-          deleteButton.setAttribute('disabled', '');
+          setButtonLoading(deleteButton, true);
         }
         return;
       }
 
       const restoreButton = e.target.closest && e.target.closest('.restore-file-button');
       if (restoreButton) {
-        restoreButton.disabled = true;
-        restoreButton.setAttribute('disabled', '');
+        setButtonLoading(restoreButton, true);
         return;
       }
 
-      const button = e.target.closest && e.target.closest('.suggest-corrections-button');
-      if (!button) return;
+      const correctionOpenButton = e.target.closest && e.target.closest('.correction-open-button');
+      if (correctionOpenButton) {
+        setButtonLoading(correctionOpenButton, true);
+        return;
+      }
 
-      const emptyState = button.closest('.correction-empty-state');
-      if (emptyState) {
-        emptyState.innerHTML = '<m3e-circular-progress-indicator variant="wavy" indeterminate></m3e-circular-progress-indicator>';
+      const suggestButton = e.target.closest && e.target.closest('.suggest-corrections-button');
+      if (suggestButton) {
+        setButtonLoading(suggestButton, true);
       }
     });
 
@@ -667,16 +745,41 @@
       if (e.target.id === 'schedule-delete-form') {
         const deleteButton = getDeleteButton();
         if (deleteButton) {
-          deleteButton.disabled = false;
-          deleteButton.removeAttribute('disabled');
+          setButtonLoading(deleteButton, false);
         }
+        updatePrimaryAction();
+      }
+
+      if (e.target.id === 'file-input') {
+        setButtonLoading(getPrimaryButton(), false);
+        e.target.value = '';
       }
 
       const restoreButton = e.target.closest && e.target.closest('.restore-file-button');
       if (restoreButton) {
-        restoreButton.disabled = false;
-        restoreButton.removeAttribute('disabled');
+        setButtonLoading(restoreButton, false);
+        updateApprovalGroupsNoticeFromResponse(e.detail && e.detail.xhr && e.detail.xhr.responseText);
+        window.setTimeout(updateApprovalGroupsNotice, 0);
       }
+
+      const correctionOpenButton = e.target.closest && e.target.closest('.correction-open-button');
+      if (correctionOpenButton) {
+        setButtonLoading(correctionOpenButton, false);
+      }
+
+      const suggestButton = e.target.closest && e.target.closest('.suggest-corrections-button');
+      if (suggestButton) {
+        setButtonLoading(suggestButton, false);
+      }
+
+      const applyForm = e.target.closest && e.target.closest('#correction-apply-form');
+      if (applyForm) {
+        setButtonLoading(applyForm.querySelector('.apply-corrections-button'), false);
+      }
+    });
+
+    document.addEventListener('htmx:afterSettle', function() {
+      updateApprovalGroupsNotice();
     });
 
     document.addEventListener('schedule-approval-state', function(e) {
@@ -684,9 +787,12 @@
       if (status === 'RUNNING') {
         setScheduleApprovalDisabled(true);
       } else if (status === 'SUCCESS') {
-        setScheduleApprovalDisabled(true);
+        setScheduleApprovalDisabled(false);
       } else if (status === 'ERROR' || status === 'IDLE') {
         setScheduleApprovalDisabled(false);
+        if (status === 'ERROR') {
+          renderApproveRetryDialog();
+        }
       }
     });
 

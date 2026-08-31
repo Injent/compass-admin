@@ -274,9 +274,34 @@ m3e-content-pane,
     z-index: 1100;
 }
 
+.schedule-approval-snackbar-container .m3-snackbar-text {
+    white-space: pre-line;
+}
+
 .schedule-approve-progress-content {
     display: grid;
     gap: 16px;
+}
+
+.schedule-action-loader {
+    --m3e-circular-flat-progress-indicator-diameter: 18px;
+    display: none !important;
+    flex: 0 0 auto;
+}
+
+.schedule-action-loading .schedule-action-loader {
+    display: inline-flex !important;
+}
+
+.schedule-action-loading .correction-open-icon,
+.schedule-action-loading > m3e-icon {
+    display: none;
+}
+
+.schedule-approval-loader {
+    --m3e-circular-flat-progress-indicator-diameter: 28px;
+    display: inline-flex !important;
+    justify-self: center;
 }
 
 .schedule-remove-groups-notice {

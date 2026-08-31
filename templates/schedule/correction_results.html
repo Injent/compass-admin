@@ -27,7 +27,10 @@
       </#list>
     </m3e-list>
     <div class="correction-footer">
-      <m3e-button class="apply-corrections-button" variant="filled" type="submit">Применить изменения</m3e-button>
+      <m3e-button class="apply-corrections-button" variant="filled" type="submit">
+        <m3e-circular-progress-indicator class="schedule-action-loader" indeterminate></m3e-circular-progress-indicator>
+        Применить изменения
+      </m3e-button>
     </div>
   </form>
 <#else>

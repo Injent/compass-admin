@@ -9,6 +9,8 @@ data class AppConfig(
     val gigachat: GigaChatConfig,
     @SerialName("compassapi")
     val compassApiConfig: CompassApiConfig,
+    @SerialName("google-callback-api-key")
+    val googleCallbackApiKey: String,
     @SerialName("access")
     val access: List<Access>
 )

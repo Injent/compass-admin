@@ -62,9 +62,18 @@ fun Routing.authPage(authService: AuthService) {
     }
 }
 
-fun Application.installAuthGuard(authService: AuthService) {
+fun Application.installAuthGuard(authService: AuthService, googleCallbackApiKey: String) {
     intercept(ApplicationCallPipeline.Plugins) {
         val path = call.request.path()
+
+        if (path.isGoogleCallbackPath()) {
+            if (call.request.headers[GOOGLE_CALLBACK_API_KEY_HEADER] != googleCallbackApiKey) {
+                call.respond(HttpStatusCode.Unauthorized, "$GOOGLE_CALLBACK_API_KEY_HEADER is required")
+                finish()
+            }
+            return@intercept
+        }
+
         if (path.isPublicAuthPath()) return@intercept
 
         val user = authService.authenticate(call)
@@ -90,6 +99,9 @@ fun Application.installAuthGuard(authService: AuthService) {
 private fun String.isPublicAuthPath(): Boolean =
     this == "/auth" || this == "/auth/login" || startsWith("/static/")
 
+private fun String.isGoogleCallbackPath(): Boolean =
+    this == GOOGLE_CALLBACK_PATH || startsWith("$GOOGLE_CALLBACK_PATH/")
+
 private fun io.ktor.server.application.ApplicationCall.shouldRedirectToAuth(): Boolean =
     request.httpMethod.value == "GET" &&
         request.headers["HX-Request"] != "true" &&
@@ -97,4 +109,7 @@ private fun io.ktor.server.application.ApplicationCall.shouldRedirectToAuth(): B
 
 private fun String.encodeNextUrl(): String =
     URLEncoder.encode(this, Charsets.UTF_8).replace("+", "%20")
+
+private const val GOOGLE_CALLBACK_PATH = "/schedule/google/callback"
+private const val GOOGLE_CALLBACK_API_KEY_HEADER = "X-API-Key"
 
