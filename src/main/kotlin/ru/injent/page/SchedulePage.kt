@@ -1,25 +1,45 @@
 package ru.injent.page
 
-import io.ktor.client.*
+import io.ktor.client.HttpClient
 import io.ktor.client.plugins.ResponseException
-import io.ktor.client.request.*
-import io.ktor.client.request.forms.*
+import io.ktor.client.request.forms.InputProvider
+import io.ktor.client.request.forms.MultiPartFormDataContent
+import io.ktor.client.request.forms.formData
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
-import io.ktor.http.*
-import io.ktor.http.content.*
-import io.ktor.server.application.*
-import io.ktor.server.freemarker.*
-import io.ktor.server.request.*
-import io.ktor.server.response.*
-import io.ktor.server.routing.*
-import io.ktor.server.sse.*
+import io.ktor.http.ContentType
+import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.Parameters
+import io.ktor.http.content.MultiPartData
+import io.ktor.http.content.PartData
+import io.ktor.http.content.forEachPart
+import io.ktor.http.contentType
+import io.ktor.server.application.ApplicationCall
+import io.ktor.server.freemarker.FreeMarkerContent
+import io.ktor.server.request.receiveMultipart
+import io.ktor.server.request.receiveParameters
+import io.ktor.server.response.header
+import io.ktor.server.response.respond
+import io.ktor.server.response.respondOutputStream
+import io.ktor.server.routing.Routing
+import io.ktor.server.routing.get
+import io.ktor.server.routing.post
+import io.ktor.server.sse.sse
 import io.ktor.util.logging.Logger
-import io.ktor.utils.io.jvm.javaio.*
-import io.ktor.utils.io.streams.*
+import io.ktor.utils.io.jvm.javaio.toInputStream
+import io.ktor.utils.io.streams.asInput
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
@@ -379,6 +399,10 @@ private suspend fun sendApprovedScheduleFiles(
             progress = 100,
             message = "Расписание отправлено"
         )
+        delay(5.seconds)
+        if (approvalState.value.status == ScheduleApprovalStatus.SUCCESS) {
+            approvalState.value = ScheduleApprovalState.idle()
+        }
     } catch (error: CancellationException) {
         throw error
     } catch (error: Throwable) {

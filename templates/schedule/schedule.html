@@ -79,7 +79,7 @@
     <m3e-button variant="outlined">
       <m3e-dialog-action return-value="cancel">Отмена</m3e-dialog-action>
     </m3e-button>
-    <m3e-button id="schedule-approve-confirm-button" variant="filled" autofocus>
+    <m3e-button id="schedule-approve-confirm-button" variant="filled">
       <m3e-circular-progress-indicator class="schedule-action-loader" indeterminate></m3e-circular-progress-indicator>
       Продолжить
     </m3e-button>
@@ -133,12 +133,18 @@
       buttonWrapper.hidden = list.dataset.allActiveFilesValid !== 'true';
     };
     const setScheduleApprovalDisabled = (disabled) => {
-      document.querySelectorAll('.schedule-header, #schedule-split-pane').forEach(element => {
+      document.querySelectorAll('.schedule-header, #schedule-split-pane, .schedule-workspace').forEach(element => {
         element.classList.toggle('schedule-approval-disabled', disabled);
         if ('inert' in element) {
           element.inert = disabled;
         }
       });
+      if (!disabled) {
+        document.querySelectorAll('.schedule-approval-disabled').forEach(element => {
+          element.classList.remove('schedule-approval-disabled');
+          element.inert = false;
+        });
+      }
     };
     const renderGroupsToRemove = (groups) => {
       const normalizedGroups = groups || '';
@@ -195,16 +201,43 @@
         body.innerHTML = 'После подтверждения расписание будет замещено новым на сервере, это действие нельзя будет отменить<div id="schedule-approve-groups-notice" class="schedule-remove-groups-notice" hidden>Также будут удалены группы: <span id="schedule-approve-groups-list"></span></div>';
       }
       if (actions) {
-        actions.innerHTML = '<m3e-button variant="outlined"><m3e-dialog-action return-value="cancel">Отмена</m3e-dialog-action></m3e-button><m3e-button id="schedule-approve-confirm-button" variant="filled" autofocus><m3e-circular-progress-indicator class="schedule-action-loader" indeterminate></m3e-circular-progress-indicator>Продолжить</m3e-button>';
+        actions.innerHTML = '<m3e-button variant="outlined"><m3e-dialog-action return-value="cancel">Отмена</m3e-dialog-action></m3e-button><m3e-button id="schedule-approve-confirm-button" variant="filled"><m3e-circular-progress-indicator class="schedule-action-loader" indeterminate></m3e-circular-progress-indicator>Продолжить</m3e-button>';
       }
       updateApprovalGroupsNotice();
     };
+    const closeApproveDialog = () => {
+      const dialog = document.getElementById('schedule-approve-dialog');
+      if (!dialog) return;
+
+      if (dialog.shadowRoot) {
+        try {
+          const innerDialog = dialog.shadowRoot.querySelector('dialog');
+          if (innerDialog && typeof innerDialog.close === 'function') {
+            innerDialog.close();
+          }
+        } catch (_) {}
+      }
+
+      const actionButton = dialog.querySelector('m3e-dialog-action');
+      if (actionButton) {
+        try { actionButton.click(); } catch (_) {}
+      }
+
+      try { if (typeof dialog.close === 'function') dialog.close(); } catch (_) {}
+      try { if (typeof dialog.dismiss === 'function') dialog.dismiss(); } catch (_) {}
+      try { if (typeof dialog.hide === 'function') dialog.hide(); } catch (_) {}
+
+      dialog.open = false;
+      dialog.opened = false;
+      dialog.removeAttribute('open');
+      dialog.removeAttribute('opened');
+      dialog.removeAttribute('active');
+    };
     const applyApprovalStateFromSnackbar = () => {
       const snackbar = document.querySelector('#schedule-approval-snackbar .m3-snackbar[data-approval-status]');
-      if (!snackbar) return;
+      const status = snackbar ? snackbar.dataset.approvalStatus : 'IDLE';
+      const progressValue = snackbar ? (snackbar.dataset.approvalProgress || '0') : '0';
 
-      const status = snackbar.dataset.approvalStatus;
-      const progressValue = snackbar.dataset.approvalProgress || '0';
       document.querySelectorAll('#schedule-approve-dialog-body m3e-linear-progress-indicator').forEach(progress => {
         progress.value = Number(progressValue);
         progress.setAttribute('value', progressValue);
@@ -465,6 +498,11 @@
         return;
       }
 
+      const approveTrigger = e.target.closest && e.target.closest('m3e-dialog-trigger[for="schedule-approve-dialog"]');
+      if (approveTrigger) {
+        renderApproveRetryDialog();
+      }
+
       const approveConfirmButton = e.target.closest('#schedule-approve-confirm-button');
       if (approveConfirmButton) {
         setButtonLoading(approveConfirmButton, true);
@@ -634,8 +672,25 @@
     updateApproveButtonVisibility();
     startProcessingAnimation();
 
+    const setupSnackbarObserver = () => {
+      const container = document.getElementById('schedule-approval-snackbar');
+      if (!container) return;
+
+      applyApprovalStateFromSnackbar();
+
+      const observer = new MutationObserver(() => {
+        applyApprovalStateFromSnackbar();
+        scheduleApprovalSnackbarDismissal();
+      });
+
+      observer.observe(container, { childList: true, subtree: true, characterData: true });
+    };
+
+    setupSnackbarObserver();
+
     document.addEventListener('htmx:afterSwap', function(e) {
-      if (e.detail.target.id === 'schedule-approval-snackbar') {
+      const target = e.detail && e.detail.target;
+      if (target && (target.id === 'schedule-approval-snackbar' || (target.closest && target.closest('#schedule-approval-snackbar')))) {
         applyApprovalStateFromSnackbar();
         scheduleApprovalSnackbarDismissal();
         return;
@@ -788,6 +843,7 @@
         setScheduleApprovalDisabled(true);
       } else if (status === 'SUCCESS') {
         setScheduleApprovalDisabled(false);
+        closeApproveDialog();
       } else if (status === 'ERROR' || status === 'IDLE') {
         setScheduleApprovalDisabled(false);
         if (status === 'ERROR') {
