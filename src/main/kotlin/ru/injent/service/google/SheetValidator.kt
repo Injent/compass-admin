@@ -14,9 +14,9 @@ class SheetValidatorScope(
 ) {
     private val accumulatedErrors = mutableListOf<CellError>()
 
-    val rows: List<List<Cell>> = sheet.data[0].rowData.mapIndexed { rowIdx, rowData ->
-        rowData.getValues().mapIndexed { colIdx, cellData ->
-            val range = sheet.merges.find { it.startRowIndex == rowIdx && it.startColumnIndex == colIdx }
+    val rows: List<List<Cell>> = sheet.data?.firstOrNull()?.rowData.orEmpty().mapIndexed { rowIdx, rowData ->
+        rowData?.getValues().orEmpty().mapIndexed { colIdx, cellData ->
+            val range = sheet.merges.orEmpty().find { it.startRowIndex == rowIdx && it.startColumnIndex == colIdx }
 
             Cell(
                 cellRef = cellData,
@@ -88,7 +88,7 @@ data class CellError(
 )
 
 data class Cell(
-    private val cellRef: CellData,
+    private val cellRef: CellData?,
     private val range: GridRange,
     val isMerged: Boolean
 ) {
@@ -117,21 +117,21 @@ data class Cell(
         get() = range.endColumnIndex.minus(1).coerceAtLeast(0)
 
     val value: String?
-        get() = cellRef.userEnteredValue?.let {
+        get() = cellRef?.userEnteredValue?.let {
             it.stringValue ?: it.numberValue?.toString() ?: it.boolValue?.toString()
         }?.normalizeCellValue()
 
     val isRedText: Boolean
-        get() = (cellRef.userEnteredFormat?.textFormat?.foregroundColor?.red ?: 0f) >= 0.9f
+        get() = (cellRef?.userEnteredFormat?.textFormat?.foregroundColor?.red ?: 0f) >= 0.9f
 
     val isBoldText: Boolean
-        get() = cellRef.userEnteredFormat?.textFormat?.bold ?: false
+        get() = cellRef?.userEnteredFormat?.textFormat?.bold ?: false
 
     val hasBackground: Boolean
-        get() = cellRef.userEnteredFormat?.backgroundColor != null
+        get() = cellRef?.userEnteredFormat?.backgroundColor != null
 
     val borders: Borders?
-        get() = cellRef.userEnteredFormat?.borders?.let { borders ->
+        get() = cellRef?.userEnteredFormat?.borders?.let { borders ->
             Borders(
                 top = borders.top != null,
                 left = borders.left != null,

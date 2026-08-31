@@ -486,7 +486,12 @@ class NewGoogleService(
 
     private suspend fun refreshGroupConflicts() = groupConflictsMutex.withLock {
         val activeFiles = files.value.filter { file -> file.status != FileStatus.EMPTY }
-        if (activeFiles.isEmpty()) return@withLock
+        if (activeFiles.isEmpty()) {
+            if (files.value.any { it.conflictGroups.isNotEmpty() }) {
+                files.value = files.value.map { it.copy(conflictGroups = emptyList()) }
+            }
+            return@withLock
+        }
 
         val groupsByFile = mutableMapOf<String, List<ScheduleGroup>>()
         for (file in activeFiles) {
@@ -508,25 +513,25 @@ class NewGoogleService(
             .filterValues { fileIds -> fileIds.distinct().size > 1 }
             .keys
 
-        activeFiles.forEach { file ->
-            val groups = groupsByFile[file.fileId] ?: return@forEach
+        var changed = false
+        val newFiles = files.value.map { file ->
+            val groups = groupsByFile[file.fileId] ?: emptyList()
             val conflictGroups = groups
                 .filter { group -> group.normalizedName in conflictingGroupNames }
                 .map(ScheduleGroup::name)
                 .distinct()
                 .sorted()
 
-            if (file.conflictGroups == conflictGroups) return@forEach
-
-            try {
-                updateFileContent(file.fileId) {
-                    appProperties[KEY_CONFLICT_GROUPS] = encodeConflictGroups(conflictGroups)
-                }.getOrThrow()
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                logger.error("failed to update group conflicts for '${file.fileId}'", error)
+            if (file.conflictGroups != conflictGroups) {
+                changed = true
+                file.copy(conflictGroups = conflictGroups)
+            } else {
+                file
             }
+        }
+
+        if (changed) {
+            files.value = newFiles
         }
     }
 
