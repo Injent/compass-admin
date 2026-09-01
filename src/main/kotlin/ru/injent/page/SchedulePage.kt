@@ -23,6 +23,7 @@ import io.ktor.server.freemarker.FreeMarkerContent
 import io.ktor.server.request.receiveMultipart
 import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.header
+import io.ktor.server.response.respondText
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondOutputStream
 import io.ktor.server.routing.Routing
@@ -80,7 +81,6 @@ fun Routing.schedulePage(
                 scheduleModel(
                     files = googleService.files.value,
                     filter = call.scheduleFilter,
-                    groupsToRemove = googleService.groupsToRemove(),
                     filesLoaded = googleService.filesLoaded.value,
                 )
             )
@@ -94,7 +94,6 @@ fun Routing.schedulePage(
                 scheduleModel(
                     files = googleService.files.value,
                     filter = call.scheduleFilter,
-                    groupsToRemove = googleService.groupsToRemove(),
                     filesLoaded = googleService.filesLoaded.value,
                 )
             )
@@ -116,7 +115,6 @@ fun Routing.schedulePage(
                     files = googleService.files.value,
                     error = uploadResult.error,
                     filter = call.scheduleFilter,
-                    groupsToRemove = googleService.groupsToRemove(),
                     filesLoaded = googleService.filesLoaded.value,
                 )
             )
@@ -146,7 +144,6 @@ fun Routing.schedulePage(
                     files = googleService.files.value,
                     error = error,
                     filter = call.scheduleFilter,
-                    groupsToRemove = googleService.groupsToRemove(),
                     filesLoaded = googleService.filesLoaded.value,
                 )
             )
@@ -174,7 +171,6 @@ fun Routing.schedulePage(
                     files = googleService.files.value,
                     error = error,
                     filter = call.scheduleFilter,
-                    groupsToRemove = googleService.groupsToRemove(),
                     filesLoaded = googleService.filesLoaded.value,
                 )
             )
@@ -228,7 +224,6 @@ fun Routing.schedulePage(
                 scheduleModel(
                     files = files,
                     filter = call.scheduleFilter,
-                    groupsToRemove = googleService.groupsToRemove(),
                     filesLoaded = googleService.filesLoaded.value,
                 )
             }
@@ -237,7 +232,6 @@ fun Routing.schedulePage(
                     scheduleModel(
                         files = googleService.files.value,
                         filter = call.scheduleFilter,
-                        groupsToRemove = googleService.groupsToRemove(),
                         filesLoaded = googleService.filesLoaded.value,
                     )
                 )
@@ -249,6 +243,14 @@ fun Routing.schedulePage(
                     event = "ScheduleListUpdate"
                 )
             }
+    }
+
+    get("/schedule/approve/groups") {
+        val groups = googleService.groupsToRemove()
+        call.respondText(
+            text = groups.joinToString(", "),
+            contentType = ContentType.Text.Plain
+        )
     }
 
     post("/schedule/approve") {
@@ -290,51 +292,15 @@ fun Routing.schedulePage(
     }
 
     get("/schedule/corrections/{fileId}") {
-        val fileId = call.parameters["fileId"].orEmpty()
-        call.respond(
-            FreeMarkerContent(
-                "schedule/correction_pane.html",
-                correctionPaneModel(fileId)
-            )
-        )
+        call.respond(HttpStatusCode.NotFound)
     }
 
     post("/schedule/corrections/{fileId}/suggest") {
-        val fileId = call.parameters["fileId"].orEmpty()
-        val result = googleService.suggestLessonCorrections(fileId, wordCorrectionService)
-
-        call.respond(
-            status = if (result.isSuccess) HttpStatusCode.OK else HttpStatusCode.InternalServerError,
-            message = FreeMarkerContent(
-                "schedule/correction_results.html",
-                correctionResultsModel(
-                    fileId = fileId,
-                    suggestions = result.getOrDefault(emptyList()),
-                    error = result.exceptionOrNull()?.message
-                )
-            )
-        )
+        call.respond(HttpStatusCode.NotFound)
     }
 
     post("/schedule/corrections/{fileId}/apply") {
-        val fileId = call.parameters["fileId"].orEmpty()
-        val replacements = call.receiveParameters().toCellReplacements()
-        val result = googleService.applyLessonCorrections(fileId, replacements)
-            .fold(
-                onSuccess = { googleService.test(fileId, sheetValidators) },
-                onFailure = { Result.failure(it) }
-            )
-
-        call.respond(
-            status = if (result.isSuccess) HttpStatusCode.OK else HttpStatusCode.InternalServerError,
-            message = FreeMarkerContent(
-                "schedule/correction_apply_result.html",
-                correctionApplyResultModel(
-                    appliedCount = if (result.isSuccess) replacements.size else 0,
-                    error = result.exceptionOrNull()?.message
-                )
-            )
-        )
+        call.respond(HttpStatusCode.NotFound)
     }
 }
 
@@ -662,12 +628,11 @@ private suspend fun uploadFilesToFreeSlots(
             }
 
             googleService.updateFileContent(target.fileId) {
-                name = fileName
+                name = fileName.removeSpreadsheetExtension()
                 inputStream = part.provider().toInputStream()
                 appProperties[KEY_STATUS] = FileStatus.PROCESSING.name
                 appProperties[KEY_UPLOAD_TIME] = Clock.System.now().toEpochMilliseconds().toString()
                 appProperties[KEY_CAN_FIX_WITH_AI] = false.toString()
-                appProperties[KEY_CONFLICT_GROUPS] = "[]"
             }.getOrThrow()
             applicationScope.launch {
                 googleService.test(target.fileId, sheetValidators)
@@ -687,6 +652,15 @@ private suspend fun uploadFilesToFreeSlots(
 
 private fun String.hasSpreadsheetExtension(): Boolean =
     endsWith(".xlsx", ignoreCase = true) || endsWith(".xls", ignoreCase = true)
+
+private fun String.removeSpreadsheetExtension(): String =
+    if (endsWith(".xlsx", ignoreCase = true)) {
+        dropLast(5)
+    } else if (endsWith(".xls", ignoreCase = true)) {
+        dropLast(4)
+    } else {
+        this
+    }
 
 private fun String.ensureXlsxExtension(): String =
     if (hasSpreadsheetExtension()) this else "$this.xlsx"
@@ -735,7 +709,6 @@ private data class UploadResult(
 private const val KEY_STATUS = "status"
 private const val KEY_UPLOAD_TIME = "uploadTime"
 private const val KEY_CAN_FIX_WITH_AI = "canFixWithAi"
-private const val KEY_CONFLICT_GROUPS = "conflictGroups"
 
 private val ZipContentType = ContentType.parse("application/zip")
 private val XlsxContentType = ContentType.parse("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

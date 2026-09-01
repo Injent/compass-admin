@@ -4,18 +4,34 @@ import com.google.api.client.http.InputStreamContent
 import com.google.api.services.drive.Drive
 import com.google.api.services.drive.model.File
 import com.google.api.services.sheets.v4.Sheets
-import com.google.api.services.sheets.v4.model.*
-import io.ktor.util.logging.*
-import kotlinx.serialization.json.Json
-import kotlinx.coroutines.*
+import com.google.api.services.sheets.v4.model.BatchUpdateSpreadsheetRequest
+import com.google.api.services.sheets.v4.model.CellData
+import com.google.api.services.sheets.v4.model.CellFormat
+import com.google.api.services.sheets.v4.model.Color
+import com.google.api.services.sheets.v4.model.ExtendedValue
+import com.google.api.services.sheets.v4.model.GridRange
+import com.google.api.services.sheets.v4.model.RepeatCellRequest
+import com.google.api.services.sheets.v4.model.Request
+import io.ktor.util.logging.Logger
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.job
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import ru.injent.dto.FileStatus
 import ru.injent.dto.SheetsFile
 import ru.injent.service.ScheduleGroup
@@ -220,14 +236,10 @@ class NewGoogleService(
 
                 val scope = SheetValidatorScope(sheet)
                 val groupNames = scope.scheduleGroupNames()
-                var canFixWithAi = false
+                val canFixWithAi = false
                 validators.forEach { validator ->
-                    val errorsBefore = scope.getAccumulatedErrors().size
                     with(validator) {
                         scope.validate()
-                    }
-                    if (validator === lessonValidator && scope.getAccumulatedErrors().size > errorsBefore) {
-                        canFixWithAi = true
                     }
                 }
                 val accumulatedErrors = scope.getAccumulatedErrors().map { cellError ->
@@ -633,7 +645,7 @@ private val GoogleFile.status: FileStatus
     get() = runCatching { appProperties?.get(KEY_STATUS)?.let(FileStatus::valueOf) }.getOrNull() ?: FileStatus.EMPTY
 
 private val GoogleFile.canFixWithAi: Boolean
-    get() = appProperties?.get(KEY_CAN_FIX_WITH_AI)?.toBooleanStrictOrNull() ?: false
+    get() = false
 
 private val GoogleFile.conflictGroups: List<String>
     get() = decodeConflictGroups(appProperties?.get(KEY_CONFLICT_GROUPS))

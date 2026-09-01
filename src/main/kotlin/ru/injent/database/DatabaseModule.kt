@@ -10,7 +10,8 @@ import ru.injent.service.ScheduleGroupService
 val databaseModule = module {
     single {
         val databasePath = System.getenv("COMPASS_DB_PATH") ?: "compassadmin.db"
-        Database.connect("jdbc:sqlite:$databasePath", driver = "org.sqlite.JDBC")
+        val url = "jdbc:sqlite:$databasePath?journal_mode=WAL&busy_timeout=10000&synchronous=NORMAL"
+        Database.connect(url, driver = "org.sqlite.JDBC")
             .also(::initializeDatabase)
     }
     singleOf(::ScheduleGroupService)
@@ -18,6 +19,9 @@ val databaseModule = module {
 
 private fun initializeDatabase(database: Database) {
     transaction(database) {
+        exec("PRAGMA journal_mode=WAL;")
+        exec("PRAGMA busy_timeout=10000;")
+        exec("PRAGMA synchronous=NORMAL;")
         SchemaUtils.create(Teachers, ScheduleGroups)
     }
 }

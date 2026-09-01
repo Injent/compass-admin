@@ -1,5 +1,4 @@
 <div id="schedule-list-container"
-     data-groups-to-remove="<#if groupsToRemove?has_content>${groupsToRemove?join(', ')?html}</#if>"
      hx-ext="sse"
      sse-connect="/schedule/list/sse<#if filter != "all">?f=${filter}</#if>">
   <div class="schedule-filter-row">
@@ -38,10 +37,6 @@
       <m3e-dialog-trigger for="schedule-approve-dialog">Подтвердить расписание</m3e-dialog-trigger>
     </m3e-button>
     </div>
-  </div>
-  <div id="schedule-list-groups-notice" class="schedule-remove-groups-notice" <#if !groupsToRemove?has_content>hidden</#if>>
-    При подтверждении будут удалены группы:
-    <span id="schedule-list-groups"> <#list groupsToRemove as group>${group?html}<#sep>, </#list></span>
   </div>
   <#include "/schedule/schedule_list.html">
 </div>

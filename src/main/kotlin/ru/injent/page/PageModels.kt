@@ -29,21 +29,24 @@ fun scheduleModel(
     filter: String = FILTER_ALL,
     groupsToRemove: List<String> = emptyList(),
     filesLoaded: Boolean = true,
-): Map<String, Any?> =
-    mapOf(
+): Map<String, Any?> {
+    val activeFiles = files.filter { it.status != FileStatus.EMPTY }
+    val hasActiveErrors = activeFiles.any { file ->
+        file.displayStatus() == FileStatus.INVALID ||
+            file.displayStatus() == FileStatus.PROCESSING ||
+            file.conflictGroups.isNotEmpty()
+    }
+    val allActiveFilesValid = filesLoaded && !hasActiveErrors
+
+    return mapOf(
         "files" to files.filterByScheduleFilter(filter).map(SheetsFile::toView),
-        "hasUnreadyFiles" to files.any { file ->
-            file.displayStatus() == FileStatus.INVALID || file.displayStatus() == FileStatus.PROCESSING
-        },
-        "allActiveFilesValid" to (filesLoaded && files
-            .filter { it.status != FileStatus.EMPTY }
-            .all { file ->
-                file.status == FileStatus.VALID && file.conflictGroups.isEmpty()
-            }),
+        "hasUnreadyFiles" to hasActiveErrors,
+        "allActiveFilesValid" to allActiveFilesValid,
         "groupsToRemove" to groupsToRemove,
         "error" to error,
         "filter" to filter.normalizeScheduleFilter(),
     )
+}
 
 fun fileModel(file: SheetsFile): Map<String, Any> =
     mapOf("file" to file.toView())

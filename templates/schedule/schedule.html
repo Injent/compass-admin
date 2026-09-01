@@ -146,43 +146,20 @@
         });
       }
     };
-    const renderGroupsToRemove = (groups) => {
-      const normalizedGroups = groups || '';
-      const container = document.getElementById('schedule-list-container');
-      if (container) {
-        container.dataset.groupsToRemove = normalizedGroups;
-      }
-      const approvalNotice = document.getElementById('schedule-approve-groups-notice');
-      const approvalGroupsList = document.getElementById('schedule-approve-groups-list');
-      if (approvalNotice && approvalGroupsList) {
-        approvalGroupsList.textContent = normalizedGroups;
-        approvalNotice.hidden = normalizedGroups.length === 0;
-      }
+    const updateApproveDialogGroupsNotice = () => {
+      const notice = document.getElementById('schedule-approve-groups-notice');
+      const list = document.getElementById('schedule-approve-groups-list');
+      if (!notice || !list) return;
 
-      const listNotice = document.getElementById('schedule-list-groups-notice');
-      const listGroups = document.getElementById('schedule-list-groups');
-      if (listNotice && listGroups) {
-        listGroups.textContent = normalizedGroups;
-        listNotice.hidden = normalizedGroups.length === 0;
-      }
-    };
-    const updateApprovalGroupsNotice = () => {
-      const list = document.getElementById('schedule-list');
-      const container = document.getElementById('schedule-list-container');
-      if (!list && !container) return;
-
-      renderGroupsToRemove(
-        (list && list.dataset.groupsToRemove) || (container && container.dataset.groupsToRemove) || ''
-      );
-    };
-    const updateApprovalGroupsNoticeFromResponse = (responseText) => {
-      if (!responseText) return;
-
-      const responseDocument = new DOMParser().parseFromString(responseText, 'text/html');
-      const responseSource = responseDocument.querySelector('#schedule-list, #schedule-list-container');
-      if (responseSource) {
-        renderGroupsToRemove(responseSource.dataset.groupsToRemove || '');
-      }
+      fetch('/schedule/approve/groups')
+        .then(res => res.text())
+        .then(groupsText => {
+          list.textContent = groupsText;
+          notice.hidden = !groupsText.trim();
+        })
+        .catch(() => {
+          notice.hidden = true;
+        });
     };
     const renderApproveProgressDialog = () => {
       const body = document.getElementById('schedule-approve-dialog-body');
@@ -203,7 +180,7 @@
       if (actions) {
         actions.innerHTML = '<m3e-button variant="outlined"><m3e-dialog-action return-value="cancel">Отмена</m3e-dialog-action></m3e-button><m3e-button id="schedule-approve-confirm-button" variant="filled"><m3e-circular-progress-indicator class="schedule-action-loader" indeterminate></m3e-circular-progress-indicator>Продолжить</m3e-button>';
       }
-      updateApprovalGroupsNotice();
+      updateApproveDialogGroupsNotice();
     };
     const closeApproveDialog = () => {
       const dialog = document.getElementById('schedule-approve-dialog');
@@ -488,6 +465,7 @@
         }
         setButtonLoading(downloadAllButton, true);
         window.location.href = '/schedule/download';
+        window.setTimeout(() => setButtonLoading(downloadAllButton, false), 2000);
         return;
       }
 
@@ -495,10 +473,11 @@
       if (downloadAllConfirmButton) {
         setButtonLoading(downloadAllConfirmButton, true);
         window.location.href = '/schedule/download';
+        window.setTimeout(() => setButtonLoading(downloadAllConfirmButton, false), 2000);
         return;
       }
 
-      const approveTrigger = e.target.closest && e.target.closest('m3e-dialog-trigger[for="schedule-approve-dialog"]');
+      const approveTrigger = e.target.closest && e.target.closest('m3e-dialog-trigger[for="schedule-approve-dialog"], #schedule-approve-button');
       if (approveTrigger) {
         renderApproveRetryDialog();
       }
@@ -535,6 +514,7 @@
         if (downloadUrl) {
           setButtonLoading(downloadFileButton, true);
           window.location.href = downloadUrl;
+          window.setTimeout(() => setButtonLoading(downloadFileButton, false), 2000);
         }
         return;
       }

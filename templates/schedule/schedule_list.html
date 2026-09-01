@@ -38,7 +38,6 @@
 <div id="schedule-list"
      data-has-unready-files="${hasUnreadyFiles?c}"
      data-all-active-files-valid="${allActiveFilesValid?c}"
-     data-groups-to-remove="<#if groupsToRemove?has_content>${groupsToRemove?join(', ')?html}</#if>"
      sse-swap="ScheduleListUpdate" hx-swap="outerHTML">
   <style>
     @keyframes slow-spin {
@@ -92,26 +91,7 @@
             </div>
           <#else>
             <div class="schedule-row-actions" slot="trailing">
-              <#if file.canFixWithAi>
-                <m3e-icon-button class="correction-open-button"
-                                 hx-get="/schedule/corrections/${file.fileId?html}"
-                                 hx-target="#correction-pane-container"
-                                 hx-swap="innerHTML"
-                                 hx-push-url="false">
-                  <m3e-circular-progress-indicator class="schedule-action-loader" indeterminate></m3e-circular-progress-indicator>
-                  <svg class="correction-open-icon" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 512 512" aria-hidden="true">
-                    <path d="M0 0h512v512H0z" fill="none" />
-                    <radialGradient id="SVGAklhae1G" cx="-80.789" cy="2.985" r="32" gradientTransform="rotate(18.683 -57.456 4644.03)scale(17.03 136.421)" gradientUnits="userSpaceOnUse">
-                      <stop offset=".067" stop-color="#9168c0" />
-                      <stop offset=".343" stop-color="#5684d1" />
-                      <stop offset=".672" stop-color="#1ba1e3" />
-                    </radialGradient>
-                    <path fill="url(#SVGAklhae1G)" d="M512 256.5c-137.5 8.4-247.1 118-255.5 255.5h-1C247.1 374.5 137.5 264.9 0 256.5v-1c137.5-8.4 247.1-118 255.5-255.5h1c8.4 137.5 118 247.1 255.5 255.5z" />
-                  </svg>
-                </m3e-icon-button>
-              <#else>
-                <div class="schedule-row-action-spacer"></div>
-              </#if>
+              <div class="schedule-row-action-spacer"></div>
               <m3e-icon-button class="download-file-button"
                                data-download-url="/schedule/download/${file.fileId?html}">
                 <m3e-circular-progress-indicator class="schedule-action-loader" indeterminate></m3e-circular-progress-indicator>
