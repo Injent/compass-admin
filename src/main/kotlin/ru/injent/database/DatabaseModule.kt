@@ -19,9 +19,6 @@ val databaseModule = module {
 
 private fun initializeDatabase(database: Database) {
     transaction(database) {
-        exec("PRAGMA journal_mode=WAL;")
-        exec("PRAGMA busy_timeout=10000;")
-        exec("PRAGMA synchronous=NORMAL;")
         SchemaUtils.create(Teachers, ScheduleGroups)
     }
 }
