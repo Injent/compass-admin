@@ -56,8 +56,17 @@ class SheetValidatorScope(
             .last()
     }
 
-    internal val headerRowIdx: Int?
-        get() = firstScheduleRowIdx?.plus(1)
+    internal val headerRowIdx: Int? = run {
+        val firstRow = firstScheduleRowIdx ?: return@run null
+        val lastRow = lastScheduleRowIdx ?: return@run null
+
+        (firstRow..lastRow).firstOrNull { rowIdx ->
+            val row = rows.getOrNull(rowIdx).orEmpty()
+            TIME_COL_IDXS.all { colIdx ->
+                row.any { cell -> cell.colIdx == colIdx && !cell.value.isNullOrBlank() }
+            }
+        }
+    }
 
     internal val firstDayRowIdx: Int? = run {
         val firstPossibleRow = headerRowIdx?.plus(1) ?: return@run null
@@ -221,6 +230,7 @@ private val LINE_BREAKS_REGEX = Regex("[\\r\\n\\t]+")
 private val INVISIBLE_CHARS_REGEX = Regex("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F\\u00AD\\u034F\\u061C\\u115F\\u1160\\u17B4\\u17B5\\u180E\\u200B-\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2060-\\u206F\\uFEFF]")
 private val SPACES_REGEX = Regex("[\\s\\u00A0]{2,}")
 private const val DAY_COL_IDX = 0
+private val TIME_COL_IDXS = 1..2
 private val WEEKDAY_NAMES = setOf(
     "понедельник",
     "вторник",

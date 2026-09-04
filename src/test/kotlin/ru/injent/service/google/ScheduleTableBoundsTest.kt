@@ -84,22 +84,29 @@ class ScheduleTableBoundsTest {
         val scope = SheetValidatorScope(
             sheet(
                 rows = listOf(
-                    row(cell("Расписание", true), cell(), cell(), cell(), cell()),
-                    row(cell(bordered = true), cell("1 корпус", true), cell("2 корпус", true), cell("ИСТМ-101", true), cell(bordered = true)),
-                    row(cell("понедельник", true), cell(bordered = true), cell(bordered = true), cell(bordered = true), cell(bordered = true)),
+                    row(cell(bordered = true), cell("1 корпус", true), cell("2 корпус", true), cell("ТМОм-101", true), cell(bordered = true)),
+                    row(cell("пятница", true), cell("11.50-13.25", true), cell("12.20-13.55", true), cell("Методы и технологии", true), cell(bordered = true)),
+                    row(cell(bordered = true), cell("14.00-15.35", true), cell("14.30-16.05", true), cell("Организация производственных процессов", true), cell(bordered = true)),
                 ),
                 merges = listOf(
+                    merge(0, 0, 3, 4),
+                    merge(1, 2, 0, 0),
                     merge(1, 1, 3, 4),
-                    merge(2, 2, 0, 2),
+                    merge(2, 2, 3, 4),
                 ),
             )
         )
 
         with(LegendValidator()) { scope.validate() }
 
-        assertEquals(2, scope.firstDayRowIdx)
+        assertEquals(0, scope.headerRowIdx)
+        assertEquals(1, scope.firstDayRowIdx)
         assertEquals(null, scope.subheaderRowIdx)
-        assertEquals(listOf("ИСТМ-101"), scope.scheduleGroupNames())
+        assertEquals(listOf("ТМОм-101"), scope.scheduleGroupNames())
+        assertEquals(
+            listOf("Методы и технологии", "Организация производственных процессов"),
+            scope.lessonCells().map(Cell::value),
+        )
         assertFalse(
             scope.getAccumulatedErrors().any {
                 it.comment == "Заголовок без подзаголовков не должен объединяться по столбцам"
