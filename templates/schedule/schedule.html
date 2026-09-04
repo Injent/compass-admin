@@ -126,12 +126,18 @@
       const query = currentFilterQuery();
       return query ? path + '?' + query : path;
     };
-    const updateApproveButtonVisibility = () => {
+    const updateApproveButtonState = () => {
       const buttonWrapper = document.getElementById('schedule-approve-button-wrapper');
+      const button = document.getElementById('schedule-approve-button');
       const list = document.getElementById('schedule-list');
-      if (!buttonWrapper || !list) return;
+      if (!buttonWrapper || !button || !list) return;
 
-      buttonWrapper.hidden = list.dataset.canOpenApproval !== 'true';
+      const disabled = list.dataset.canOpenApproval !== 'true';
+      button.disabled = disabled;
+      button.toggleAttribute('disabled', disabled);
+      button.setAttribute('aria-disabled', String(disabled));
+      buttonWrapper.dataset.disabled = String(disabled);
+      buttonWrapper.tabIndex = disabled ? 0 : -1;
     };
     const setScheduleApprovalDisabled = (disabled) => {
       document.querySelectorAll('.schedule-header, #schedule-split-pane, .schedule-workspace').forEach(element => {
@@ -674,7 +680,7 @@
 
     updateApprovalGroupsNotice();
     filterFiles();
-    updateApproveButtonVisibility();
+    updateApproveButtonState();
     startProcessingAnimation();
 
     const setupSnackbarObserver = () => {
@@ -704,7 +710,7 @@
       if (e.detail.target.id === 'schedule-list-container' || e.detail.target.id === 'schedule-list') {
         updateApprovalGroupsNotice();
         filterFiles();
-        updateApproveButtonVisibility();
+        updateApproveButtonState();
         startProcessingAnimation();
         const requestElement = e.detail.requestConfig && e.detail.requestConfig.elt;
         if (isDeletedFilterSelected()) {

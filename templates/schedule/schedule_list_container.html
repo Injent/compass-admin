@@ -32,10 +32,17 @@
                        hx-push-url="/schedule?f=deleted"
                        <#if filter == "deleted">selected</#if>>Удаленные</m3e-filter-chip>
     </m3e-filter-chip-set>
-    <div id="schedule-approve-button-wrapper" <#if !canOpenScheduleApproval>hidden</#if>>
-    <m3e-button id="schedule-approve-button" variant="tonal">
-      <m3e-dialog-trigger for="schedule-approve-dialog">Подтвердить расписание</m3e-dialog-trigger>
-    </m3e-button>
+    <div id="schedule-approve-button-wrapper"
+         data-disabled="<#if canOpenScheduleApproval>false<#else>true</#if>"
+         tabindex="<#if canOpenScheduleApproval>-1<#else>0</#if>">
+      <m3e-button id="schedule-approve-button"
+                  variant="tonal"
+                  <#if !canOpenScheduleApproval>disabled aria-disabled="true"</#if>>
+        <m3e-dialog-trigger for="schedule-approve-dialog">Подтвердить расписание</m3e-dialog-trigger>
+      </m3e-button>
+      <span class="schedule-approve-tooltip" role="tooltip">
+        Нельзя подтвердить расписание если есть невалидные или обрабатывающиеся файлы
+      </span>
     </div>
   </div>
   <#include "/schedule/schedule_list.html">

@@ -258,11 +258,37 @@ m3e-content-pane,
 }
 
 #schedule-approve-button-wrapper {
+    position: relative;
     flex-shrink: 0;
 }
 
-#schedule-approve-button-wrapper[hidden] {
-    display: none !important;
+#schedule-approve-button-wrapper[data-disabled="true"] m3e-button {
+    pointer-events: none;
+}
+
+.schedule-approve-tooltip {
+    position: absolute;
+    z-index: 10;
+    top: calc(100% + 8px);
+    right: 0;
+    width: max-content;
+    max-width: 320px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: rgb(32 33 36 / 82%);
+    color: white;
+    font-size: 13px;
+    line-height: 18px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-4px);
+    transition: opacity 120ms ease, transform 120ms ease;
+}
+
+#schedule-approve-button-wrapper[data-disabled="true"]:hover .schedule-approve-tooltip,
+#schedule-approve-button-wrapper[data-disabled="true"]:focus-visible .schedule-approve-tooltip {
+    opacity: 1;
+    transform: translateY(0);
 }
 
 .schedule-approval-disabled {
