@@ -42,15 +42,19 @@ class SheetValidatorScope(
             }
     }
 
-    internal val firstScheduleRowIdx: Int? = rows.asSequence()
+    private val borderedRowIndexes = rows.asSequence()
         .flatMap(List<Cell>::asSequence)
         .filter { cell -> cell.borders != null }
-        .minOfOrNull(Cell::rowIdx)
+        .flatMap { cell -> (cell.rowIdx..cell.endRowIdx).asSequence() }
+        .toSet()
 
-    internal val lastScheduleRowIdx: Int? = rows.asSequence()
-        .flatMap(List<Cell>::asSequence)
-        .filter { cell -> cell.borders != null }
-        .maxOfOrNull(Cell::endRowIdx)
+    internal val firstScheduleRowIdx: Int? = borderedRowIndexes.minOrNull()
+
+    internal val lastScheduleRowIdx: Int? = firstScheduleRowIdx?.let { firstRow ->
+        generateSequence(firstRow) { rowIdx -> rowIdx + 1 }
+            .takeWhile(borderedRowIndexes::contains)
+            .last()
+    }
 
     internal val headerRowIdx: Int?
         get() = firstScheduleRowIdx?.plus(1)

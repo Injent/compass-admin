@@ -52,10 +52,10 @@ class ScheduleTableBoundsTest {
                     row(cell("вторник", true), cell(bordered = true), cell(bordered = true), cell("Самостоятельная работа", true)),
                     row(cell("среда", true), cell(bordered = true), cell(bordered = true), cell("Самостоятельная работа", true)),
                     row(cell("четверг", true), cell(bordered = true), cell(bordered = true), cell("Самостоятельная работа", true)),
-                    row(cell("пятница", true), cell("11.50-13.25", true), cell("12.20-13.55", true), cell("Пара", true)),
+                    row(cell("суббота", true), cell("11.50-13.25", true), cell("12.20-13.55", true), cell("Пара", true)),
                     row(cell(bordered = true), cell("14.00-15.35", true), cell("14.30-16.05", true), cell("Пара", true)),
-                    row(cell(), cell("Надпись после таблицы"), cell(), cell()),
-                    row(cell("Следующая надпись"), cell(), cell(), cell()),
+                    row(cell(), cell(), cell(), cell()),
+                    row(cell(), cell("Начальник учебного отдела", true), cell(bordered = true), cell("С.В.Турова", true)),
                 ),
                 merges = listOf(
                     merge(2, 3, 1, 1),
@@ -73,6 +73,7 @@ class ScheduleTableBoundsTest {
         with(LegendValidator()) { scope.validate() }
         val comments = scope.getAccumulatedErrors().map(CellError::comment)
 
+        assertEquals(9, scope.lastScheduleRowIdx)
         assertFalse("В границах дня недели должны быть ячейки времени" in comments)
         assertFalse("Между ячейками времени не должно быть пустых ячеек" in comments)
         assertFalse("После последнего дня недели не должно быть данных вне его объединенной ячейки" in comments)
