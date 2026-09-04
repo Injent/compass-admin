@@ -32,7 +32,7 @@
                        hx-push-url="/schedule?f=deleted"
                        <#if filter == "deleted">selected</#if>>Удаленные</m3e-filter-chip>
     </m3e-filter-chip-set>
-    <div id="schedule-approve-button-wrapper" <#if !allActiveFilesValid>hidden</#if>>
+    <div id="schedule-approve-button-wrapper" <#if !canOpenScheduleApproval>hidden</#if>>
     <m3e-button id="schedule-approve-button" variant="tonal">
       <m3e-dialog-trigger for="schedule-approve-dialog">Подтвердить расписание</m3e-dialog-trigger>
     </m3e-button>

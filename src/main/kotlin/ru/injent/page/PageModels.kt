@@ -31,17 +31,16 @@ fun scheduleModel(
     filesLoaded: Boolean = true,
 ): Map<String, Any?> {
     val activeFiles = files.filter { it.status != FileStatus.EMPTY }
-    val hasActiveErrors = activeFiles.any { file ->
-        file.displayStatus() == FileStatus.INVALID ||
-            file.displayStatus() == FileStatus.PROCESSING ||
-            file.conflictGroups.isNotEmpty()
+    val hasActiveFileErrors = activeFiles.any { file ->
+        file.status == FileStatus.INVALID || file.status == FileStatus.PROCESSING
     }
-    val allActiveFilesValid = filesLoaded && !hasActiveErrors
+    val hasDuplicateGroups = activeFiles.any { file -> file.conflictGroups.isNotEmpty() }
+    val canOpenScheduleApproval = filesLoaded && !hasActiveFileErrors
 
     return mapOf(
         "files" to files.filterByScheduleFilter(filter).map(SheetsFile::toView),
-        "hasUnreadyFiles" to hasActiveErrors,
-        "allActiveFilesValid" to allActiveFilesValid,
+        "hasUnreadyFiles" to (hasActiveFileErrors || hasDuplicateGroups),
+        "canOpenScheduleApproval" to canOpenScheduleApproval,
         "groupsToRemove" to groupsToRemove,
         "error" to error,
         "filter" to filter.normalizeScheduleFilter(),

@@ -42,6 +42,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
@@ -245,11 +246,17 @@ fun Routing.schedulePage(
             }
     }
 
-    get("/schedule/approve/groups") {
-        val groups = googleService.groupsToRemove()
-        call.respondText(
-            text = groups.joinToString(", "),
-            contentType = ContentType.Text.Plain
+    get("/schedule/approve/preview") {
+        val files = googleService.files.value
+            .filter { file -> file.status != FileStatus.EMPTY }
+        call.respond(
+            ScheduleApprovalPreview(
+                groupsToRemove = googleService.groupsToRemove(),
+                duplicateGroups = files
+                    .flatMap(SheetsFile::conflictGroups)
+                    .distinct()
+                    .sorted(),
+            )
         )
     }
 
@@ -603,10 +610,10 @@ private suspend fun uploadFilesToFreeSlots(
     val freeFiles = googleService.files.value
         .filter { file -> file.status == FileStatus.EMPTY }
         .toMutableList()
-
-    if (freeFiles.isEmpty()) {
-        return UploadResult(error = "Нет свободных слотов для загрузки")
-    }
+    val existingFilesByName = googleService.files.value
+        .filter { file -> file.status != FileStatus.EMPTY }
+        .associateBy { file -> file.name.scheduleFileNameKey() }
+        .toMutableMap()
 
     var uploadedCount = 0
     var rejectedCount = 0
@@ -615,25 +622,30 @@ private suspend fun uploadFilesToFreeSlots(
         try {
             if (part !is PartData.FileItem) return@forEachPart
 
-            val fileName = part.originalFileName.orEmpty()
+            val fileName = part.originalFileName.orEmpty().substringAfterLast('/').substringAfterLast('\\')
             if (!fileName.hasSpreadsheetExtension()) {
                 rejectedCount++
                 return@forEachPart
             }
 
-            val target = freeFiles.removeFirstOrNull()
+            val storedFileName = fileName.removeSpreadsheetExtension()
+            val target = existingFilesByName[storedFileName.scheduleFileNameKey()]
+                ?: freeFiles.removeFirstOrNull()
             if (target == null) {
                 rejectedCount++
                 return@forEachPart
             }
+            freeFiles.removeAll { file -> file.fileId == target.fileId }
 
             googleService.updateFileContent(target.fileId) {
-                name = fileName.removeSpreadsheetExtension()
+                name = storedFileName
                 inputStream = part.provider().toInputStream()
                 appProperties[KEY_STATUS] = FileStatus.PROCESSING.name
                 appProperties[KEY_UPLOAD_TIME] = Clock.System.now().toEpochMilliseconds().toString()
                 appProperties[KEY_CAN_FIX_WITH_AI] = false.toString()
+                appProperties[KEY_CONFLICT_GROUPS] = "[]"
             }.getOrThrow()
+            existingFilesByName[storedFileName.scheduleFileNameKey()] = target.copy(name = storedFileName)
             applicationScope.launch {
                 googleService.test(target.fileId, sheetValidators)
             }
@@ -661,6 +673,9 @@ private fun String.removeSpreadsheetExtension(): String =
     } else {
         this
     }
+
+private fun String.scheduleFileNameKey(): String =
+    removeSpreadsheetExtension().trim().lowercase()
 
 private fun String.ensureXlsxExtension(): String =
     if (hasSpreadsheetExtension()) this else "$this.xlsx"
@@ -706,9 +721,16 @@ private data class UploadResult(
     val error: String? = null
 )
 
+@Serializable
+private data class ScheduleApprovalPreview(
+    val groupsToRemove: List<String>,
+    val duplicateGroups: List<String>,
+)
+
 private const val KEY_STATUS = "status"
 private const val KEY_UPLOAD_TIME = "uploadTime"
 private const val KEY_CAN_FIX_WITH_AI = "canFixWithAi"
+private const val KEY_CONFLICT_GROUPS = "conflictGroups"
 
 private val ZipContentType = ContentType.parse("application/zip")
 private val XlsxContentType = ContentType.parse("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

@@ -1,6 +1,7 @@
 package ru.injent.service.google
 
 import com.google.api.client.http.InputStreamContent
+import com.google.api.client.googleapis.json.GoogleJsonResponseException
 import com.google.api.services.drive.Drive
 import com.google.api.services.drive.model.File
 import com.google.api.services.sheets.v4.Sheets
@@ -21,6 +22,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,11 +43,11 @@ import ru.injent.service.validator.LegendValidator
 import ru.injent.service.validator.LessonValidator
 import ru.injent.service.validator.TeacherValidator
 import ru.injent.service.wordcorrection.WordCorrectionService
-import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -102,9 +104,11 @@ class NewGoogleService(
         }
     }
 
-    fun exportAsXlsx(fileId: String) = drive.files()
-        .export(fileId, XLSX_MIME)
-        .executeMediaAsInputStream()
+    fun exportAsXlsx(fileId: String) = executeGoogleRequestWithRetry("export '$fileId'") {
+        drive.files()
+            .export(fileId, XLSX_MIME)
+            .executeMediaAsInputStream()
+    }
 
     suspend fun exportAsZipTo(fileNamesById: Map<String, String>, output: OutputStream) =
         withFileLocks(fileNamesById.keys) {
@@ -464,26 +468,21 @@ class NewGoogleService(
 
     private suspend fun downloadFileWithRetry(
         fileId: String,
-        maxRetries: Int = 1
     ): Result<ByteArray> = coroutineScope {
-        var attempt = 0
-        var lastException: Throwable? = null
-
-        while (attempt < maxRetries) {
-            try {
-                val bytes = drive.files()
+        try {
+            Result.success(
+                executeGoogleRequestWithRetry("download '$fileId'") {
+                    drive.files()
                     .export(fileId, XLSX_MIME)
                     .executeMediaAsInputStream()
                     .use { it.readBytes() }
-
-                return@coroutineScope Result.success(bytes)
-            } catch (e: IOException) {
-                attempt++
-                lastException = e
-            }
+                }
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            Result.failure(error)
         }
-
-        Result.failure(lastException ?: Exception("Error downloading file '$fileId'"))
     }
 
     private suspend fun getAllFiles(folderId: String) = runResulting("get all files") {
@@ -594,18 +593,57 @@ class NewGoogleService(
         operation: String,
         block: suspend CoroutineScope.() -> T,
     ): Result<T> = withContext(ioDispatcher) {
-        try {
-            logger.debug("starting '$operation'")
-            val result = block()
-            logger.info("completed '$operation'")
-            Result.success(result)
-        } catch (error: CancellationException) {
-            logger.info("cancelled '$operation'")
-            throw error
-        } catch (error: Throwable) {
-            logger.error("failed '$operation'", error)
-            Result.failure(error)
+        for (attempt in 1..GOOGLE_REQUEST_MAX_ATTEMPTS) {
+            try {
+                logger.debug("starting '$operation'")
+                val result = block()
+                logger.info("completed '$operation'")
+                return@withContext Result.success(result)
+            } catch (error: CancellationException) {
+                logger.info("cancelled '$operation'")
+                throw error
+            } catch (error: GoogleJsonResponseException) {
+                if (error.statusCode == GOOGLE_SERVICE_UNAVAILABLE_STATUS &&
+                    attempt < GOOGLE_REQUEST_MAX_ATTEMPTS
+                ) {
+                    logger.warn(
+                        "Google API is unavailable for '$operation'; " +
+                            "retrying (${attempt + 1}/$GOOGLE_REQUEST_MAX_ATTEMPTS)"
+                    )
+                    delay(GOOGLE_REQUEST_RETRY_DELAY)
+                    continue
+                }
+                logger.error("failed '$operation'", error)
+                return@withContext Result.failure(error)
+            } catch (error: Throwable) {
+                logger.error("failed '$operation'", error)
+                return@withContext Result.failure(error)
+            }
         }
+        error("Unreachable Google request retry state")
+    }
+
+    private fun <T> executeGoogleRequestWithRetry(
+        operation: String,
+        block: () -> T,
+    ): T {
+        for (attempt in 1..GOOGLE_REQUEST_MAX_ATTEMPTS) {
+            try {
+                return block()
+            } catch (error: GoogleJsonResponseException) {
+                if (error.statusCode != GOOGLE_SERVICE_UNAVAILABLE_STATUS ||
+                    attempt == GOOGLE_REQUEST_MAX_ATTEMPTS
+                ) {
+                    throw error
+                }
+                logger.warn(
+                    "Google API is unavailable for '$operation'; " +
+                        "retrying (${attempt + 1}/$GOOGLE_REQUEST_MAX_ATTEMPTS)"
+                )
+                Thread.sleep(GOOGLE_REQUEST_RETRY_DELAY.inWholeMilliseconds)
+            }
+        }
+        error("Unreachable Google request retry state")
     }
 
     class UpdateFileContentScope() {
@@ -640,6 +678,9 @@ private const val KEY_STATUS = "status"
 private const val KEY_UPLOAD_TIME = "uploadTime"
 private const val KEY_CAN_FIX_WITH_AI = "canFixWithAi"
 private const val KEY_CONFLICT_GROUPS = "conflictGroups"
+private const val GOOGLE_SERVICE_UNAVAILABLE_STATUS = 503
+private const val GOOGLE_REQUEST_MAX_ATTEMPTS = 3
+private val GOOGLE_REQUEST_RETRY_DELAY = 2.seconds
 
 private val GoogleFile.status: FileStatus
     get() = runCatching { appProperties?.get(KEY_STATUS)?.let(FileStatus::valueOf) }.getOrNull() ?: FileStatus.EMPTY

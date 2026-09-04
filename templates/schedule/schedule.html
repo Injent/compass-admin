@@ -63,17 +63,18 @@
   <span slot="header">Подтвердить расписание?</span>
   <div id="schedule-approve-dialog-body">
     После подтверждения расписание будет замещено новым на сервере, это действие нельзя будет отменить
-    <#if groupsToRemove?has_content>
-      <div id="schedule-approve-groups-notice" class="schedule-remove-groups-notice">
-        Также будут удалены группы:
-        <span id="schedule-approve-groups-list"><#list groupsToRemove as group>${group?html}<#sep>, </#list></span>
-      </div>
-    <#else>
-      <div id="schedule-approve-groups-notice" class="schedule-remove-groups-notice" hidden>
-        Также будут удалены группы:
-        <span id="schedule-approve-groups-list"></span>
-      </div>
-    </#if>
+    <div id="schedule-approve-groups-notice" class="schedule-remove-groups-notice" hidden>
+      Также будут удалены группы:
+      <span id="schedule-approve-groups-list"></span>
+    </div>
+    <div id="schedule-approve-duplicates-notice" class="schedule-remove-groups-notice" hidden>
+      В загруженных файлах дублируются группы:
+      <span id="schedule-approve-duplicates-list"></span>.
+      Устраните дубликаты перед подтверждением.
+    </div>
+    <div id="schedule-approve-preview-error" class="schedule-remove-groups-notice" hidden>
+      Не удалось проверить удаляемые и дублирующиеся группы. Повторите попытку.
+    </div>
   </div>
   <div id="schedule-approve-dialog-actions" slot="actions" end>
     <m3e-button variant="outlined">
@@ -130,7 +131,7 @@
       const list = document.getElementById('schedule-list');
       if (!buttonWrapper || !list) return;
 
-      buttonWrapper.hidden = list.dataset.allActiveFilesValid !== 'true';
+      buttonWrapper.hidden = list.dataset.canOpenApproval !== 'true';
     };
     const setScheduleApprovalDisabled = (disabled) => {
       document.querySelectorAll('.schedule-header, #schedule-split-pane, .schedule-workspace').forEach(element => {
@@ -146,19 +147,43 @@
         });
       }
     };
-    const updateApproveDialogGroupsNotice = () => {
-      const notice = document.getElementById('schedule-approve-groups-notice');
-      const list = document.getElementById('schedule-approve-groups-list');
-      if (!notice || !list) return;
+    const updateApproveDialogWarnings = () => {
+      const groupsNotice = document.getElementById('schedule-approve-groups-notice');
+      const groupsList = document.getElementById('schedule-approve-groups-list');
+      const duplicatesNotice = document.getElementById('schedule-approve-duplicates-notice');
+      const duplicatesList = document.getElementById('schedule-approve-duplicates-list');
+      const previewError = document.getElementById('schedule-approve-preview-error');
+      if (!groupsNotice || !groupsList || !duplicatesNotice || !duplicatesList || !previewError) return;
 
-      fetch('/schedule/approve/groups')
-        .then(res => res.text())
-        .then(groupsText => {
-          list.textContent = groupsText;
-          notice.hidden = !groupsText.trim();
+      fetch('/schedule/approve/preview')
+        .then(res => {
+          if (!res.ok) throw new Error('Не удалось получить данные подтверждения');
+          return res.json();
+        })
+        .then(preview => {
+          const groupsToRemove = Array.isArray(preview.groupsToRemove) ? preview.groupsToRemove : [];
+          const duplicateGroups = Array.isArray(preview.duplicateGroups) ? preview.duplicateGroups : [];
+          previewError.hidden = true;
+          groupsList.textContent = groupsToRemove.join(', ');
+          groupsNotice.hidden = groupsToRemove.length === 0;
+          duplicatesList.textContent = duplicateGroups.join(', ');
+          duplicatesNotice.hidden = duplicateGroups.length === 0;
+
+          const confirmButton = document.getElementById('schedule-approve-confirm-button');
+          if (confirmButton) {
+            confirmButton.disabled = duplicateGroups.length > 0;
+            confirmButton.toggleAttribute('disabled', duplicateGroups.length > 0);
+          }
         })
         .catch(() => {
-          notice.hidden = true;
+          groupsNotice.hidden = true;
+          duplicatesNotice.hidden = true;
+          previewError.hidden = false;
+          const confirmButton = document.getElementById('schedule-approve-confirm-button');
+          if (confirmButton) {
+            confirmButton.disabled = true;
+            confirmButton.setAttribute('disabled', '');
+          }
         });
     };
     const renderApproveProgressDialog = () => {
@@ -175,12 +200,12 @@
       const body = document.getElementById('schedule-approve-dialog-body');
       const actions = document.getElementById('schedule-approve-dialog-actions');
       if (body) {
-        body.innerHTML = 'После подтверждения расписание будет замещено новым на сервере, это действие нельзя будет отменить<div id="schedule-approve-groups-notice" class="schedule-remove-groups-notice" hidden>Также будут удалены группы: <span id="schedule-approve-groups-list"></span></div>';
+        body.innerHTML = 'После подтверждения расписание будет замещено новым на сервере, это действие нельзя будет отменить<div id="schedule-approve-groups-notice" class="schedule-remove-groups-notice" hidden>Также будут удалены группы: <span id="schedule-approve-groups-list"></span></div><div id="schedule-approve-duplicates-notice" class="schedule-remove-groups-notice" hidden>В загруженных файлах дублируются группы: <span id="schedule-approve-duplicates-list"></span>. Устраните дубликаты перед подтверждением.</div><div id="schedule-approve-preview-error" class="schedule-remove-groups-notice" hidden>Не удалось проверить удаляемые и дублирующиеся группы. Повторите попытку.</div>';
       }
       if (actions) {
         actions.innerHTML = '<m3e-button variant="outlined"><m3e-dialog-action return-value="cancel">Отмена</m3e-dialog-action></m3e-button><m3e-button id="schedule-approve-confirm-button" variant="filled"><m3e-circular-progress-indicator class="schedule-action-loader" indeterminate></m3e-circular-progress-indicator>Продолжить</m3e-button>';
       }
-      updateApproveDialogGroupsNotice();
+      updateApproveDialogWarnings();
     };
     const closeApproveDialog = () => {
       const dialog = document.getElementById('schedule-approve-dialog');
@@ -822,8 +847,8 @@
       if (status === 'RUNNING') {
         setScheduleApprovalDisabled(true);
       } else if (status === 'SUCCESS') {
-        setScheduleApprovalDisabled(false);
         closeApproveDialog();
+        setScheduleApprovalDisabled(false);
       } else if (status === 'ERROR' || status === 'IDLE') {
         setScheduleApprovalDisabled(false);
         if (status === 'ERROR') {
