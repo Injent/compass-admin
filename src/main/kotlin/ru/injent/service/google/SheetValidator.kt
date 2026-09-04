@@ -55,8 +55,25 @@ class SheetValidatorScope(
     internal val headerRowIdx: Int?
         get() = firstScheduleRowIdx?.plus(1)
 
+    internal val firstDayRowIdx: Int? = run {
+        val firstPossibleRow = headerRowIdx?.plus(1) ?: return@run null
+        val lastPossibleRow = lastScheduleRowIdx ?: return@run null
+
+        rows.asSequence()
+            .flatMap(List<Cell>::asSequence)
+            .filter { cell ->
+                cell.colIdx == DAY_COL_IDX &&
+                    cell.rowIdx in firstPossibleRow..lastPossibleRow &&
+                    cell.value.isWeekdayName()
+            }
+            .minOfOrNull(Cell::rowIdx)
+    }
+
     internal val subheaderRowIdx: Int?
-        get() = headerRowIdx?.plus(1)
+        get() {
+            val headerRow = headerRowIdx ?: return null
+            return firstDayRowIdx?.minus(1)?.takeIf { it > headerRow }
+        }
 
     private val initialErrorCells = rows.flatten().filter(Cell::hasBackground)
 
@@ -179,14 +196,16 @@ data class Cell(
 
 internal fun SheetValidatorScope.scheduleGroupNames(): List<String> {
     val detectedHeaderRowIdx = headerRowIdx ?: return emptyList()
-    val detectedSubheaderRowIdx = subheaderRowIdx ?: return emptyList()
 
     return scheduleGroupNamesFromHeaders(
         rows = rows,
         headerRowIdx = detectedHeaderRowIdx,
-        subheaderRowIdx = detectedSubheaderRowIdx,
+        subheaderRowIdx = subheaderRowIdx,
     )
 }
+
+internal fun String?.isWeekdayName(): Boolean =
+    orEmpty().trim().lowercase().replace('ё', 'е') in WEEKDAY_NAMES
 
 private fun String.normalizeCellValue(): String =
     replace(LINE_BREAKS_REGEX, " ")
@@ -197,3 +216,13 @@ private fun String.normalizeCellValue(): String =
 private val LINE_BREAKS_REGEX = Regex("[\\r\\n\\t]+")
 private val INVISIBLE_CHARS_REGEX = Regex("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F\\u00AD\\u034F\\u061C\\u115F\\u1160\\u17B4\\u17B5\\u180E\\u200B-\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2060-\\u206F\\uFEFF]")
 private val SPACES_REGEX = Regex("[\\s\\u00A0]{2,}")
+private const val DAY_COL_IDX = 0
+private val WEEKDAY_NAMES = setOf(
+    "понедельник",
+    "вторник",
+    "среда",
+    "четверг",
+    "пятница",
+    "суббота",
+    "воскресенье",
+)

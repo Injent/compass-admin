@@ -3,16 +3,16 @@ package ru.injent.service.validator
 import ru.injent.service.google.Cell
 import ru.injent.service.google.SheetValidator
 import ru.injent.service.google.SheetValidatorScope
+import ru.injent.service.google.isWeekdayName
 
 class LegendValidator : SheetValidator {
     override fun SheetValidatorScope.validate() {
         val detectedHeaderRowIdx = headerRowIdx ?: return
-        val detectedSubheaderRowIdx = subheaderRowIdx ?: return
         val detectedLastScheduleRowIdx = lastScheduleRowIdx ?: return
-        val firstLessonRow = validateCorpusHeaders(detectedHeaderRowIdx)
+        val fallbackFirstDayRow = validateCorpusHeaders(detectedHeaderRowIdx)
 
-        validateTableHeaders(detectedHeaderRowIdx, detectedSubheaderRowIdx)
-        validateDayBlocks(firstLessonRow, detectedLastScheduleRowIdx)
+        validateTableHeaders(detectedHeaderRowIdx, subheaderRowIdx)
+        validateDayBlocks(firstDayRowIdx ?: fallbackFirstDayRow, detectedLastScheduleRowIdx)
     }
 }
 
@@ -56,8 +56,11 @@ private fun SheetValidatorScope.validateCorpusHeaders(headerRowIdx: Int): Int {
     ) + 1
 }
 
-private fun SheetValidatorScope.validateTableHeaders(headerRowIdx: Int, subheaderRowIdx: Int) {
-    val lastHeaderCol = maxOf(lastOccupiedColInRow(headerRowIdx), lastOccupiedColInRow(subheaderRowIdx))
+private fun SheetValidatorScope.validateTableHeaders(headerRowIdx: Int, subheaderRowIdx: Int?) {
+    val lastHeaderCol = maxOf(
+        lastOccupiedColInRow(headerRowIdx),
+        subheaderRowIdx?.let(::lastOccupiedColInRow) ?: -1,
+    )
     if (lastHeaderCol < FIRST_TIME_COL_IDX) return
 
     var colIdx = FIRST_TIME_COL_IDX
@@ -93,26 +96,28 @@ private fun SheetValidatorScope.validateTableHeaders(headerRowIdx: Int, subheade
             }
         }
 
-        if (subheaders.isEmpty()) {
-            headerCell.test {
-                if (headerWidth > 1) {
-                    error("Заголовок без подзаголовков не должен объединяться по столбцам")
+        if (subheaderRowIdx != null) {
+            if (subheaders.isEmpty()) {
+                headerCell.test {
+                    if (headerWidth > 1) {
+                        error("Заголовок без подзаголовков не должен объединяться по столбцам")
+                    }
                 }
-            }
-        } else {
-            headerCell.test {
-                if (headerWidth != subheaders.size) {
-                    error("Количество столбцов объединенного заголовка должно совпадать с количеством подзаголовков")
+            } else {
+                headerCell.test {
+                    if (headerWidth != subheaders.size) {
+                        error("Количество столбцов объединенного заголовка должно совпадать с количеством подзаголовков")
+                    }
                 }
-            }
 
-            for (subheaderColIdx in headerCell.colIdx..headerCell.endColIdx) {
-                val subheaderCell = coveringCell(subheaderRowIdx, subheaderColIdx)
-                if (subheaderCell == null || subheaderCell.rowIdx != subheaderRowIdx || subheaderCell.value.isNullOrBlank()) {
-                    cellAt(subheaderRowIdx, subheaderColIdx)?.test {
-                        error("Под объединенным заголовком не должно быть пустых подзаголовков")
-                    } ?: headerCell.test {
-                        error("Под объединенным заголовком не должно быть пустых подзаголовков")
+                for (subheaderColIdx in headerCell.colIdx..headerCell.endColIdx) {
+                    val subheaderCell = coveringCell(subheaderRowIdx, subheaderColIdx)
+                    if (subheaderCell == null || subheaderCell.rowIdx != subheaderRowIdx || subheaderCell.value.isNullOrBlank()) {
+                        cellAt(subheaderRowIdx, subheaderColIdx)?.test {
+                            error("Под объединенным заголовком не должно быть пустых подзаголовков")
+                        } ?: headerCell.test {
+                            error("Под объединенным заголовком не должно быть пустых подзаголовков")
+                        }
                     }
                 }
             }
@@ -143,8 +148,9 @@ private fun SheetValidatorScope.validateDayBlocks(firstScheduleRow: Int, lastSch
 
         validateInterruptedDayRange(expectedDayStartRow, dayCell.rowIdx - 1, dayCell)
 
-        val nextDayRow = nextNonEmptyDayCellRow(dayCell.rowIdx)
-        val scanEndRow = ((nextDayRow ?: (lastScheduleRow + 1)) - 1).coerceAtLeast(dayCell.rowIdx)
+        val nextDayRow = nextNonEmptyDayCellRow(dayCell.rowIdx, lastScheduleRow)
+        val scanEndRow = minOf((nextDayRow ?: (lastScheduleRow + 1)) - 1, lastScheduleRow)
+            .coerceAtLeast(dayCell.rowIdx)
         val timeCells = timeCellsBetween(dayCell.rowIdx, scanEndRow)
         val expectedDayEndRow = timeCells.maxOfOrNull(Cell::endRowIdx)
 
@@ -156,7 +162,9 @@ private fun SheetValidatorScope.validateDayBlocks(firstScheduleRow: Int, lastSch
                 error("В названии дня недели есть опечатка")
             }
             if (expectedDayEndRow == null) {
-                error("В границах дня недели должны быть ячейки времени")
+                if (endColIdx != SECOND_TIME_COL_IDX) {
+                    error("В границах дня недели должны быть ячейки времени")
+                }
             } else if (endRowIdx != expectedDayEndRow) {
                 error("Объединение дня недели должно заканчиваться на строке последней ячейки времени")
             }
@@ -248,8 +256,8 @@ private fun SheetValidatorScope.lastOccupiedColInRow(rowIdx: Int): Int =
         .maxOfOrNull(Cell::endColIdx)
         ?: -1
 
-private fun SheetValidatorScope.subheaderCellsUnder(headerCell: Cell, subheaderRowIdx: Int): List<Cell> =
-    rows.getOrNull(subheaderRowIdx)
+private fun SheetValidatorScope.subheaderCellsUnder(headerCell: Cell, subheaderRowIdx: Int?): List<Cell> =
+    subheaderRowIdx?.let(rows::getOrNull)
         ?.filter { cell ->
             cell.rowIdx == subheaderRowIdx &&
                 cell.colIdx in headerCell.colIdx..headerCell.endColIdx &&
@@ -257,10 +265,14 @@ private fun SheetValidatorScope.subheaderCellsUnder(headerCell: Cell, subheaderR
         }
         .orEmpty()
 
-private fun SheetValidatorScope.nextNonEmptyDayCellRow(currentDayRow: Int): Int? =
+private fun SheetValidatorScope.nextNonEmptyDayCellRow(currentDayRow: Int, lastScheduleRow: Int): Int? =
     rows.asSequence()
         .flatMap(List<Cell>::asSequence)
-        .filter { cell -> cell.colIdx == DAY_COL_IDX && cell.rowIdx > currentDayRow && !cell.value.isNullOrBlank() }
+        .filter { cell ->
+            cell.colIdx == DAY_COL_IDX &&
+                cell.rowIdx in (currentDayRow + 1)..lastScheduleRow &&
+                !cell.value.isNullOrBlank()
+        }
         .map(Cell::rowIdx)
         .minOrNull()
 
@@ -302,9 +314,6 @@ private fun String?.normalizedText(): String =
         .lowercase()
         .replace('ё', 'е')
         .replace(Regex("\\s+"), " ")
-
-private fun String?.isWeekdayName(): Boolean =
-    normalizedText() in WEEKDAY_NAMES
 
 private fun String?.isTimeRange(): Boolean =
     normalizedText().matches(TIME_RANGE_REGEX)
@@ -353,12 +362,3 @@ private const val GROUP_WORD_MAX_DISTANCE = 2
 private val TIME_COL_IDXS = FIRST_TIME_COL_IDX..SECOND_TIME_COL_IDX
 private val TIME_RANGE_REGEX = Regex("\\d{1,2}\\.\\d{2}-\\d{1,2}\\.\\d{2}")
 private val NON_LETTER_REGEX = Regex("[^\\p{L}]+")
-private val WEEKDAY_NAMES = setOf(
-    "понедельник",
-    "вторник",
-    "среда",
-    "четверг",
-    "пятница",
-    "суббота",
-    "воскресенье",
-)

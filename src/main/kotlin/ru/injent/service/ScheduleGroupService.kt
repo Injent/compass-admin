@@ -123,7 +123,7 @@ class ScheduleGroupService(
 internal fun scheduleGroupNamesFromHeaders(
     rows: List<List<Cell>>,
     headerRowIdx: Int,
-    subheaderRowIdx: Int,
+    subheaderRowIdx: Int?,
 ): List<String> {
     val headerCells = rows.getOrNull(headerRowIdx)
         .orEmpty()
@@ -135,7 +135,7 @@ internal fun scheduleGroupNamesFromHeaders(
 
     return headerCells
         .flatMap { headerCell ->
-            val subheaderCells = rows.getOrNull(subheaderRowIdx)
+            val subheaderCells = subheaderRowIdx?.let(rows::getOrNull)
                 .orEmpty()
                 .filter { subheaderCell ->
                     subheaderCell.rowIdx == subheaderRowIdx &&

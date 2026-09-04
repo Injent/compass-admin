@@ -19,7 +19,7 @@ class LessonValidator : SheetValidator {
 }
 
 internal fun SheetValidatorScope.lessonCells(): List<Cell> {
-    val firstLessonRowIdx = firstLessonRowIdx() ?: return emptyList()
+    val firstLessonRowIdx = firstDayRowIdx ?: return emptyList()
     val lastLessonRowIdx = lastScheduleRowIdx ?: return emptyList()
 
     return rows.asSequence()
@@ -41,30 +41,6 @@ internal fun String.lessonTeacherNames(): List<String> =
 
 internal fun String.isLessonTeacherNameFormatValid(): Boolean =
     !TEACHER_SEPARATOR_REGEX.containsMatchIn(this) && TEACHER_NAME_REGEX.matches(normalizedSpaces())
-
-private fun SheetValidatorScope.firstLessonRowIdx(): Int? {
-    val detectedHeaderRowIdx = headerRowIdx ?: return null
-    val detectedSubheaderRowIdx = subheaderRowIdx ?: return null
-    val headerCells = rows.getOrNull(detectedHeaderRowIdx)
-        ?.filter { cell ->
-            cell.rowIdx == detectedHeaderRowIdx &&
-                cell.colIdx >= LESSON_START_COL_IDX &&
-                !cell.value.isNullOrBlank()
-        }
-        .orEmpty()
-
-    return headerCells.maxOfOrNull { headerCell ->
-        val hasSubheaders = rows.getOrNull(detectedSubheaderRowIdx)
-            ?.any { subheaderCell ->
-                subheaderCell.rowIdx == detectedSubheaderRowIdx &&
-                    subheaderCell.colIdx in headerCell.colIdx..headerCell.endColIdx &&
-                    !subheaderCell.value.isNullOrBlank()
-            }
-            ?: false
-
-        if (hasSubheaders) detectedSubheaderRowIdx + 1 else headerCell.endRowIdx + 1
-    } ?: detectedSubheaderRowIdx
-}
 
 private fun validateLessonLine(line: String) {
     if (line.endsWith(".")) {
