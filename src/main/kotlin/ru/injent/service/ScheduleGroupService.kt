@@ -76,6 +76,18 @@ class ScheduleGroupService(
             }
     }
 
+    fun markMissingFilesDeleted(existingFileIds: Collection<String>) {
+        val existingIds = existingFileIds.toSet()
+        val missingIds = transaction(database) {
+            ScheduleGroups
+                .selectAll()
+                .map { row -> row[ScheduleGroups.fileId] }
+                .filterNot(existingIds::contains)
+                .distinct()
+        }
+        markFilesDeleted(missingIds)
+    }
+
     fun groupsToRemove(): List<String> = transaction(database) {
         val rows = ScheduleGroups.selectAll().toList()
         val activeGroupNames = rows

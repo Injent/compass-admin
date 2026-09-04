@@ -102,12 +102,14 @@ fun Routing.schedulePage(
     }
 
     post("/schedule/upload") {
-        val uploadResult = uploadFilesToFreeSlots(
-            googleService = googleService,
-            multipart = call.receiveMultipart(),
-            sheetValidators = sheetValidators,
-            applicationScope = applicationScope,
-        )
+        val uploadResult = googleService.withScheduleOperation {
+            uploadFilesToFreeSlots(
+                googleService = googleService,
+                multipart = call.receiveMultipart(),
+                sheetValidators = sheetValidators,
+                applicationScope = applicationScope,
+            )
+        }
         call.respond(
             status = if (uploadResult.error == null) HttpStatusCode.OK else HttpStatusCode.BadRequest,
             message = FreeMarkerContent(
@@ -275,13 +277,21 @@ fun Routing.schedulePage(
         )
 
         applicationScope.launch {
-            sendApprovedScheduleFiles(
-                googleService = googleService,
-                appConfig = appConfig,
-                httpClient = httpClient,
-                approvalState = approvalState,
-                logger = logger,
-            )
+            googleService.withScheduleOperation {
+                sendApprovedScheduleFiles(
+                    googleService = googleService,
+                    appConfig = appConfig,
+                    httpClient = httpClient,
+                    approvalState = approvalState,
+                    logger = logger,
+                )
+            }
+            if (approvalState.value.status == ScheduleApprovalStatus.SUCCESS) {
+                delay(5.seconds)
+                if (approvalState.value.status == ScheduleApprovalStatus.SUCCESS) {
+                    approvalState.value = ScheduleApprovalState.idle()
+                }
+            }
         }
 
         call.respond(HttpStatusCode.Accepted)
@@ -376,10 +386,6 @@ private suspend fun sendApprovedScheduleFiles(
             progress = 100,
             message = "Расписание отправлено"
         )
-        delay(5.seconds)
-        if (approvalState.value.status == ScheduleApprovalStatus.SUCCESS) {
-            approvalState.value = ScheduleApprovalState.idle()
-        }
     } catch (error: CancellationException) {
         throw error
     } catch (error: Throwable) {
@@ -640,6 +646,11 @@ private suspend fun uploadFilesToFreeSlots(
             googleService.updateFileContent(target.fileId) {
                 name = storedFileName
                 inputStream = part.provider().toInputStream()
+                contentType = if (fileName.endsWith(".xls", ignoreCase = true)) {
+                    XlsContentType.toString()
+                } else {
+                    XlsxContentType.toString()
+                }
                 appProperties[KEY_STATUS] = FileStatus.PROCESSING.name
                 appProperties[KEY_UPLOAD_TIME] = Clock.System.now().toEpochMilliseconds().toString()
                 appProperties[KEY_CAN_FIX_WITH_AI] = false.toString()
@@ -733,4 +744,5 @@ private const val KEY_CAN_FIX_WITH_AI = "canFixWithAi"
 private const val KEY_CONFLICT_GROUPS = "conflictGroups"
 
 private val ZipContentType = ContentType.parse("application/zip")
+private val XlsContentType = ContentType.parse("application/vnd.ms-excel")
 private val XlsxContentType = ContentType.parse("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

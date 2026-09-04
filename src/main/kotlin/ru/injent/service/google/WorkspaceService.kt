@@ -67,6 +67,8 @@ class NewGoogleService(
     private val validationJobs = mutableMapOf<String, Job>()
     private val validationJobsGuard = Mutex()
     private val groupConflictsMutex = Mutex()
+    // ponytail: one workspace-wide lock; split only if real concurrent administration is required.
+    private val scheduleOperationMutex = Mutex()
     private val scheduleGroupVersion = MutableStateFlow(0)
 
     val files: StateFlow<List<SheetsFile>>
@@ -79,22 +81,37 @@ class NewGoogleService(
         get() = merge(files, scheduleGroupVersion.map { files.value })
 
     suspend fun loadFiles(): Result<Unit> {
-        val folder = getWorkspaceFolder().getOrElse { return Result.failure(it) }
-        val loadedFiles = getAllFiles(folder.id).getOrElse { return Result.failure(it) }
+        val result = withScheduleOperation {
+            val folder = getWorkspaceFolder().getOrElse { return@withScheduleOperation Result.failure(it) }
+            val loadedFiles = getAllFiles(folder.id).getOrElse { return@withScheduleOperation Result.failure(it) }
 
-        files.value = loadedFiles.map(GoogleFile::toSheetsFile)
-        scheduleGroupService.markFilesDeleted(
+            files.value = loadedFiles.map(GoogleFile::toSheetsFile)
+            scheduleGroupService.markMissingFilesDeleted(files.value.map(SheetsFile::fileId))
+            scheduleGroupService.markFilesDeleted(
+                files.value
+                    .filter { file -> file.status == FileStatus.EMPTY }
+                    .map { file -> file.fileId }
+            )
+            notifyScheduleGroupUpdate()
+            syncLoadedFileGroups()
+            refreshGroupConflicts()
+            filesLoaded.value = true
+            notifyScheduleGroupUpdate()
+            Result.success(Unit)
+        }
+
+        if (result.isSuccess) {
             files.value
-                .filter { file -> file.status == FileStatus.EMPTY }
-                .map { file -> file.fileId }
-        )
-        notifyScheduleGroupUpdate()
-        syncLoadedFileGroups()
-        refreshGroupConflicts()
-        filesLoaded.value = true
-        notifyScheduleGroupUpdate()
-        return Result.success(Unit)
+                .filter { file -> file.status == FileStatus.PROCESSING }
+                .forEach { file ->
+                    test(file.fileId, listOf(legendValidator, lessonValidator, teacherValidator))
+                }
+        }
+        return result
     }
+
+    suspend fun <T> withScheduleOperation(block: suspend () -> T): T =
+        scheduleOperationMutex.withLock { block() }
 
     suspend fun exportAsXlsxTo(fileId: String, output: OutputStream) = withFileLock(fileId) {
         runResulting("download '$fileId'") {
@@ -115,11 +132,11 @@ class NewGoogleService(
             runResulting("export zip ${fileNamesById.keys}") {
             val deferredFiles = fileNamesById.keys.map { id ->
                 async(ioDispatcher) {
-                    id to downloadFileWithRetry(id).getOrElse { return@async null }
+                    id to downloadFileWithRetry(id).getOrThrow()
                 }
             }
 
-            val downloadedFiles = deferredFiles.awaitAll().filterNotNull()
+            val downloadedFiles = deferredFiles.awaitAll()
 
             ZipOutputStream(output).use { zipOut ->
                 for ((fileId, bytes) in downloadedFiles) {
@@ -137,13 +154,10 @@ class NewGoogleService(
         configure: UpdateFileContentScope.() -> Unit
     ) = withFileLock(fileId) {
         val contentScope = UpdateFileContentScope().apply(configure)
+        val mediaBytes = contentScope.inputStream?.use(InputStream::readBytes)
 
         val previousFile = files.value.firstOrNull { it.fileId == fileId }
         applyOptimisticFileUpdate(fileId, contentScope)
-
-        val mediaContent = contentScope.inputStream?.let {
-            InputStreamContent(SPREADSHEET_MIME, it)
-        }
 
         runResulting("update file content '$fileId'") {
             val content = GoogleFile().apply {
@@ -151,6 +165,9 @@ class NewGoogleService(
                 mergeAppProperties(fileId, contentScope.appProperties)
                     .takeIf { it.isNotEmpty() }
                     ?.let { this.appProperties = it }
+            }
+            val mediaContent = mediaBytes?.let { bytes ->
+                InputStreamContent(contentScope.contentType, bytes.inputStream())
             }
 
             drive.files()
@@ -168,21 +185,23 @@ class NewGoogleService(
         }
     }
 
-    suspend fun freeFiles(fileIds: Collection<String>) = runResulting("free files = $fileIds") {
-        fileIds.distinct()
-            .map { fileId ->
-                async {
-                    updateFileContent(fileId) {
-                        appProperties[KEY_STATUS] = FileStatus.EMPTY.toString()
-                        appProperties[KEY_CONFLICT_GROUPS] = encodeConflictGroups(emptyList())
-                    }.getOrThrow()
+    suspend fun freeFiles(fileIds: Collection<String>) = withScheduleOperation {
+        runResulting("free files = $fileIds") {
+            fileIds.distinct()
+                .map { fileId ->
+                    async {
+                        updateFileContent(fileId) {
+                            appProperties[KEY_STATUS] = FileStatus.EMPTY.toString()
+                            appProperties[KEY_CONFLICT_GROUPS] = encodeConflictGroups(emptyList())
+                        }.getOrThrow()
+                    }
                 }
-            }
-            .awaitAll()
-        scheduleGroupService.markFilesDeleted(fileIds)
-        notifyScheduleGroupUpdate()
-        refreshGroupConflicts()
-        Unit
+                .awaitAll()
+            scheduleGroupService.markFilesDeleted(fileIds)
+            notifyScheduleGroupUpdate()
+            refreshGroupConflicts()
+            Unit
+        }
     }
 
     fun groupsToRemove(): List<String> {
@@ -216,6 +235,13 @@ class NewGoogleService(
     }
 
     suspend fun restore(fileId: String): Result<Unit> {
+        val restoreStarted = withScheduleOperation {
+            updateFileContent(fileId) {
+                appProperties[KEY_STATUS] = FileStatus.PROCESSING.toString()
+            }
+        }
+        restoreStarted.exceptionOrNull()?.let { error -> return Result.failure(error) }
+
         val sheetValidators = listOf(legendValidator, lessonValidator, teacherValidator)
         return test(fileId, sheetValidators)
     }
@@ -235,58 +261,78 @@ class NewGoogleService(
         previousJob?.cancelAndJoin()
 
         try {
-            runResulting("validating $fileId") {
-                val sheet = getSheet(fileId).getOrThrow()
+            val result = withScheduleOperation {
+                val validationResult = runResulting("validating $fileId") {
+                    val sheet = getSheet(fileId).getOrThrow()
 
-                val scope = SheetValidatorScope(sheet)
-                val groupNames = scope.scheduleGroupNames()
-                val canFixWithAi = false
-                validators.forEach { validator ->
-                    with(validator) {
-                        scope.validate()
+                    val scope = SheetValidatorScope(sheet)
+                    val groupNames = scope.scheduleGroupNames()
+                    val canFixWithAi = false
+                    validators.forEach { validator ->
+                        with(validator) {
+                            scope.validate()
+                        }
                     }
-                }
-                val accumulatedErrors = scope.getAccumulatedErrors().map { cellError ->
-                    InvalidCellRequest(
-                        sheetId = sheet.properties.sheetId,
-                        colIdx = cellError.colIdx,
-                        rowIdx = cellError.rowIdx,
-                        comment = cellError.comment
-                    )
-                }
-                val fixedErrors = scope.getFixedErrors().map { cellError ->
-                    ValidCellRequest(
-                        sheetId = sheet.properties.sheetId,
-                        colIdx = cellError.colIdx,
-                        rowIdx = cellError.rowIdx
-                    )
-                }
-                val updateSheetsDeferred = async {
-                    sheets.spreadsheets()
-                        .batchUpdate(
-                            fileId,
-                            BatchUpdateSpreadsheetRequest()
-                                .setRequests(accumulatedErrors + fixedErrors)
-                                .also { if (it.requests.isEmpty()) return@async }
+                    val accumulatedErrors = scope.getAccumulatedErrors().map { cellError ->
+                        InvalidCellRequest(
+                            sheetId = sheet.properties.sheetId,
+                            colIdx = cellError.colIdx,
+                            rowIdx = cellError.rowIdx,
+                            comment = cellError.comment
                         )
-                        .execute()
-                }
-                val updateStatusDeferred = async {
-                    val newStatus = if (accumulatedErrors.isEmpty()) FileStatus.VALID else FileStatus.INVALID
-                    val currentFile = files.value.find { it.fileId == fileId }
-                    if (currentFile?.status == newStatus && currentFile.canFixWithAi == canFixWithAi) return@async
+                    }
+                    val fixedErrors = scope.getFixedErrors().map { cellError ->
+                        ValidCellRequest(
+                            sheetId = sheet.properties.sheetId,
+                            colIdx = cellError.colIdx,
+                            rowIdx = cellError.rowIdx
+                        )
+                    }
+                    val updateSheetsDeferred = async {
+                        sheets.spreadsheets()
+                            .batchUpdate(
+                                fileId,
+                                BatchUpdateSpreadsheetRequest()
+                                    .setRequests(accumulatedErrors + fixedErrors)
+                                    .also { if (it.requests.isEmpty()) return@async }
+                            )
+                            .execute()
+                    }
+                    val updateStatusDeferred = async {
+                        val newStatus = if (accumulatedErrors.isEmpty()) FileStatus.VALID else FileStatus.INVALID
+                        val currentFile = files.value.find { it.fileId == fileId }
+                        if (currentFile?.status == newStatus && currentFile.canFixWithAi == canFixWithAi) return@async
 
-                    updateFileContent(fileId) {
-                        appProperties[KEY_STATUS] = newStatus.toString()
-                        appProperties[KEY_CAN_FIX_WITH_AI] = canFixWithAi.toString()
+                        updateFileContent(fileId) {
+                            appProperties[KEY_STATUS] = newStatus.toString()
+                            appProperties[KEY_CAN_FIX_WITH_AI] = canFixWithAi.toString()
+                        }
+                    }
+                    listOf(updateStatusDeferred, updateSheetsDeferred).awaitAll()
+                    scheduleGroupService.syncGroups(fileId, groupNames)
+                    notifyScheduleGroupUpdate()
+                    refreshGroupConflicts()
+                    Unit
+                }
+                if (validationResult.isFailure) {
+                    val statusResult = updateFileContent(fileId) {
+                        appProperties[KEY_STATUS] = FileStatus.INVALID.toString()
+                    }
+                    if (statusResult.isFailure) {
+                        files.update { currentFiles ->
+                            currentFiles.map { file ->
+                                if (file.fileId == fileId && file.status == FileStatus.PROCESSING) {
+                                    file.copy(status = FileStatus.INVALID)
+                                } else {
+                                    file
+                                }
+                            }
+                        }
                     }
                 }
-                listOf(updateStatusDeferred, updateSheetsDeferred).awaitAll()
-                scheduleGroupService.syncGroups(fileId, groupNames)
-                notifyScheduleGroupUpdate()
-                refreshGroupConflicts()
-                Unit
+                validationResult
             }
+            result
         } finally {
             validationJobsGuard.withLock {
                 if (validationJobs[fileId] == currentJob) {
@@ -487,12 +533,19 @@ class NewGoogleService(
 
     private suspend fun getAllFiles(folderId: String) = runResulting("get all files") {
         val query = "'$folderId' in parents and mimeType = '$SPREADSHEET_MIME' and trashed = false"
-        drive.files()
-            .list()
-            .setQ(query)
-            .setFields("files(id, name, appProperties, modifiedTime)")
-            .execute()
-            .files
+        val result = mutableListOf<GoogleFile>()
+        var pageToken: String? = null
+        do {
+            val page = drive.files()
+                .list()
+                .setQ(query)
+                .setPageToken(pageToken)
+                .setFields("nextPageToken, files(id, name, appProperties, modifiedTime)")
+                .execute()
+            result += page.files.orEmpty()
+            pageToken = page.nextPageToken
+        } while (pageToken != null)
+        result
     }
 
     private suspend fun refreshGroupConflicts() = groupConflictsMutex.withLock {
@@ -649,6 +702,7 @@ class NewGoogleService(
     class UpdateFileContentScope() {
         var name: String? = null
         var inputStream: InputStream? = null
+        var contentType: String = XLSX_MIME
         var appProperties: MutableMap<String, String?> = mutableMapOf()
     }
 }

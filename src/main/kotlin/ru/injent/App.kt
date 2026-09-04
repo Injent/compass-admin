@@ -23,6 +23,7 @@ import io.ktor.server.sse.SSE
 import io.ktor.util.logging.Logger
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
@@ -51,6 +52,7 @@ import ru.injent.service.validator.validatorModule
 import ru.injent.service.wordcorrection.WordCorrectionService
 import ru.injent.service.wordcorrection.wordCorrectionModule
 import java.io.File
+import kotlin.time.Duration.Companion.seconds
 
 fun Application.configureApp() {
     val appConfig = runCatching {
@@ -136,7 +138,12 @@ fun Application.configureApp() {
     val sheetValidators = listOf(get<LegendValidator>(), get<LessonValidator>(), get<TeacherValidator>())
 
     launch {
-        googleService.loadFiles()
+        while (true) {
+            val result = googleService.loadFiles()
+            if (result.isSuccess) break
+            log.warn("Unable to load schedule files; retrying in 30 seconds", result.exceptionOrNull())
+            delay(30.seconds)
+        }
     }
     routing {
         staticAssets()
