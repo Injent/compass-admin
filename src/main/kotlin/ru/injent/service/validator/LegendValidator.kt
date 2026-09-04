@@ -6,19 +6,23 @@ import ru.injent.service.google.SheetValidatorScope
 
 class LegendValidator : SheetValidator {
     override fun SheetValidatorScope.validate() {
-        val firstScheduleRow = validateCorpusHeaders()
-        validateTableHeaders()
-        validateDayBlocks(firstScheduleRow)
+        val detectedHeaderRowIdx = headerRowIdx ?: return
+        val detectedSubheaderRowIdx = subheaderRowIdx ?: return
+        val detectedLastScheduleRowIdx = lastScheduleRowIdx ?: return
+        val firstLessonRow = validateCorpusHeaders(detectedHeaderRowIdx)
+
+        validateTableHeaders(detectedHeaderRowIdx, detectedSubheaderRowIdx)
+        validateDayBlocks(firstLessonRow, detectedLastScheduleRowIdx)
     }
 }
 
-private fun SheetValidatorScope.validateCorpusHeaders(): Int {
-    val firstCorpusCell = cellAt(HEADER_ROW_IDX, FIRST_TIME_COL_IDX)
-    val secondCorpusCell = cellAt(HEADER_ROW_IDX, SECOND_TIME_COL_IDX)
+private fun SheetValidatorScope.validateCorpusHeaders(headerRowIdx: Int): Int {
+    val firstCorpusCell = cellAt(headerRowIdx, FIRST_TIME_COL_IDX)
+    val secondCorpusCell = cellAt(headerRowIdx, SECOND_TIME_COL_IDX)
 
     firstCorpusCell?.test {
         if (value.normalizedText() != FIRST_CORPUS) {
-            error("В ячейке B2 должен быть текст '$FIRST_CORPUS'")
+            error("В ячейке B${headerRowIdx + 1} должен быть текст '$FIRST_CORPUS'")
         }
         if (isRedText) {
             error("Текст '$FIRST_CORPUS' не должен быть красным")
@@ -30,7 +34,7 @@ private fun SheetValidatorScope.validateCorpusHeaders(): Int {
 
     secondCorpusCell?.test {
         if (value.normalizedText() != SECOND_CORPUS) {
-            error("В ячейке C2 должен быть текст '$SECOND_CORPUS'")
+            error("В ячейке C${headerRowIdx + 1} должен быть текст '$SECOND_CORPUS'")
         }
         if (!isRedText) {
             error("Текст '$SECOND_CORPUS' должен быть красным")
@@ -47,20 +51,20 @@ private fun SheetValidatorScope.validateCorpusHeaders(): Int {
     }
 
     return maxOf(
-        firstCorpusCell?.endRowIdx ?: HEADER_ROW_IDX,
-        secondCorpusCell?.endRowIdx ?: HEADER_ROW_IDX,
+        firstCorpusCell?.endRowIdx ?: headerRowIdx,
+        secondCorpusCell?.endRowIdx ?: headerRowIdx,
     ) + 1
 }
 
-private fun SheetValidatorScope.validateTableHeaders() {
-    val lastHeaderCol = maxOf(lastOccupiedColInRow(HEADER_ROW_IDX), lastOccupiedColInRow(SUBHEADER_ROW_IDX))
+private fun SheetValidatorScope.validateTableHeaders(headerRowIdx: Int, subheaderRowIdx: Int) {
+    val lastHeaderCol = maxOf(lastOccupiedColInRow(headerRowIdx), lastOccupiedColInRow(subheaderRowIdx))
     if (lastHeaderCol < FIRST_TIME_COL_IDX) return
 
     var colIdx = FIRST_TIME_COL_IDX
     while (colIdx <= lastHeaderCol) {
-        val headerCell = coveringCell(HEADER_ROW_IDX, colIdx)
-        if (headerCell == null || headerCell.rowIdx != HEADER_ROW_IDX || headerCell.value.isNullOrBlank()) {
-            cellAt(HEADER_ROW_IDX, colIdx)?.test {
+        val headerCell = coveringCell(headerRowIdx, colIdx)
+        if (headerCell == null || headerCell.rowIdx != headerRowIdx || headerCell.value.isNullOrBlank()) {
+            cellAt(headerRowIdx, colIdx)?.test {
                 error("Между заголовками не должно быть пустых ячеек")
             }
             colIdx++
@@ -79,7 +83,7 @@ private fun SheetValidatorScope.validateTableHeaders() {
         }
 
         val headerWidth = headerCell.endColIdx - headerCell.colIdx + 1
-        val subheaders = subheaderCellsUnder(headerCell)
+        val subheaders = subheaderCellsUnder(headerCell, subheaderRowIdx)
 
         subheaders.forEach { subheaderCell ->
             subheaderCell.test {
@@ -103,9 +107,9 @@ private fun SheetValidatorScope.validateTableHeaders() {
             }
 
             for (subheaderColIdx in headerCell.colIdx..headerCell.endColIdx) {
-                val subheaderCell = coveringCell(SUBHEADER_ROW_IDX, subheaderColIdx)
-                if (subheaderCell == null || subheaderCell.rowIdx != SUBHEADER_ROW_IDX || subheaderCell.value.isNullOrBlank()) {
-                    cellAt(SUBHEADER_ROW_IDX, subheaderColIdx)?.test {
+                val subheaderCell = coveringCell(subheaderRowIdx, subheaderColIdx)
+                if (subheaderCell == null || subheaderCell.rowIdx != subheaderRowIdx || subheaderCell.value.isNullOrBlank()) {
+                    cellAt(subheaderRowIdx, subheaderColIdx)?.test {
                         error("Под объединенным заголовком не должно быть пустых подзаголовков")
                     } ?: headerCell.test {
                         error("Под объединенным заголовком не должно быть пустых подзаголовков")
@@ -118,8 +122,7 @@ private fun SheetValidatorScope.validateTableHeaders() {
     }
 }
 
-private fun SheetValidatorScope.validateDayBlocks(firstScheduleRow: Int) {
-    val lastScheduleRow = lastOccupiedRowInScheduleColumns()
+private fun SheetValidatorScope.validateDayBlocks(firstScheduleRow: Int, lastScheduleRow: Int) {
     if (lastScheduleRow < firstScheduleRow) return
 
     val dayCells = dayCellsBetween(firstScheduleRow, lastScheduleRow)
@@ -245,21 +248,10 @@ private fun SheetValidatorScope.lastOccupiedColInRow(rowIdx: Int): Int =
         .maxOfOrNull(Cell::endColIdx)
         ?: -1
 
-private fun SheetValidatorScope.lastOccupiedRowInScheduleColumns(): Int =
-    rows.asSequence()
-        .flatMap(List<Cell>::asSequence)
-        .filter { cell ->
-            cell.colIdx <= SECOND_TIME_COL_IDX &&
-                cell.endColIdx >= DAY_COL_IDX &&
-                (!cell.value.isNullOrBlank() || cell.borders != null)
-        }
-        .maxOfOrNull(Cell::endRowIdx)
-        ?: -1
-
-private fun SheetValidatorScope.subheaderCellsUnder(headerCell: Cell): List<Cell> =
-    rows.getOrNull(SUBHEADER_ROW_IDX)
+private fun SheetValidatorScope.subheaderCellsUnder(headerCell: Cell, subheaderRowIdx: Int): List<Cell> =
+    rows.getOrNull(subheaderRowIdx)
         ?.filter { cell ->
-            cell.rowIdx == SUBHEADER_ROW_IDX &&
+            cell.rowIdx == subheaderRowIdx &&
                 cell.colIdx in headerCell.colIdx..headerCell.endColIdx &&
                 !cell.value.isNullOrBlank()
         }
@@ -352,8 +344,6 @@ private fun String.levenshteinDistance(other: String): Int {
 private const val DAY_COL_IDX = 0
 private const val FIRST_TIME_COL_IDX = 1
 private const val SECOND_TIME_COL_IDX = 2
-private const val HEADER_ROW_IDX = 1
-private const val SUBHEADER_ROW_IDX = 2
 private const val FIRST_CORPUS = "1 корпус"
 private const val SECOND_CORPUS = "2 корпус"
 private const val GROUP_WORD = "группа"

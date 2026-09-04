@@ -18,18 +18,20 @@ class LessonValidator : SheetValidator {
     }
 }
 
-internal fun SheetValidatorScope.lessonCells(): List<Cell> =
-    firstLessonRowIdx().let { firstLessonRowIdx ->
-        rows.asSequence()
-            .drop(firstLessonRowIdx)
-            .flatMap(List<Cell>::asSequence)
-            .filter { cell ->
-                cell.colIdx >= LESSON_START_COL_IDX &&
-                    cell.rowIdx >= firstLessonRowIdx &&
-                    !cell.value.isNullOrBlank()
-            }
-            .toList()
-    }
+internal fun SheetValidatorScope.lessonCells(): List<Cell> {
+    val firstLessonRowIdx = firstLessonRowIdx() ?: return emptyList()
+    val lastLessonRowIdx = lastScheduleRowIdx ?: return emptyList()
+
+    return rows.asSequence()
+        .drop(firstLessonRowIdx)
+        .flatMap(List<Cell>::asSequence)
+        .filter { cell ->
+            cell.colIdx >= LESSON_START_COL_IDX &&
+                cell.rowIdx in firstLessonRowIdx..lastLessonRowIdx &&
+                !cell.value.isNullOrBlank()
+        }
+        .toList()
+}
 
 internal fun String.lessonTeacherNames(): List<String> =
     runCatching { balancedRoundBracketRanges() }
@@ -40,26 +42,28 @@ internal fun String.lessonTeacherNames(): List<String> =
 internal fun String.isLessonTeacherNameFormatValid(): Boolean =
     !TEACHER_SEPARATOR_REGEX.containsMatchIn(this) && TEACHER_NAME_REGEX.matches(normalizedSpaces())
 
-private fun SheetValidatorScope.firstLessonRowIdx(): Int {
-    val headerCells = rows.getOrNull(HEADER_ROW_IDX)
+private fun SheetValidatorScope.firstLessonRowIdx(): Int? {
+    val detectedHeaderRowIdx = headerRowIdx ?: return null
+    val detectedSubheaderRowIdx = subheaderRowIdx ?: return null
+    val headerCells = rows.getOrNull(detectedHeaderRowIdx)
         ?.filter { cell ->
-            cell.rowIdx == HEADER_ROW_IDX &&
+            cell.rowIdx == detectedHeaderRowIdx &&
                 cell.colIdx >= LESSON_START_COL_IDX &&
                 !cell.value.isNullOrBlank()
         }
         .orEmpty()
 
     return headerCells.maxOfOrNull { headerCell ->
-        val hasSubheaders = rows.getOrNull(SUBHEADER_ROW_IDX)
+        val hasSubheaders = rows.getOrNull(detectedSubheaderRowIdx)
             ?.any { subheaderCell ->
-                subheaderCell.rowIdx == SUBHEADER_ROW_IDX &&
+                subheaderCell.rowIdx == detectedSubheaderRowIdx &&
                     subheaderCell.colIdx in headerCell.colIdx..headerCell.endColIdx &&
                     !subheaderCell.value.isNullOrBlank()
             }
             ?: false
 
-        if (hasSubheaders) SUBHEADER_ROW_IDX + 1 else headerCell.endRowIdx + 1
-    } ?: SUBHEADER_ROW_IDX
+        if (hasSubheaders) detectedSubheaderRowIdx + 1 else headerCell.endRowIdx + 1
+    } ?: detectedSubheaderRowIdx
 }
 
 private fun validateLessonLine(line: String) {
@@ -174,8 +178,6 @@ private fun String.hasDotWithWrongCase(): Boolean =
         .any { word -> word.equals(DOT_WORD, ignoreCase = true) && word != DOT_WORD }
 
 private const val LESSON_START_COL_IDX = 3
-private const val HEADER_ROW_IDX = 1
-private const val SUBHEADER_ROW_IDX = 2
 private const val ROOM_SIGN = '№'
 private const val DOT_WORD = "ДОТ"
 

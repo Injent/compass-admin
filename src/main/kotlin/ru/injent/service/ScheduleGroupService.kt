@@ -120,21 +120,25 @@ class ScheduleGroupService(
     }
 }
 
-internal fun scheduleGroupNamesFromHeaders(rows: List<List<Cell>>): List<String> {
-    val headerCells = rows.getOrNull(HEADER_ROW_IDX)
+internal fun scheduleGroupNamesFromHeaders(
+    rows: List<List<Cell>>,
+    headerRowIdx: Int,
+    subheaderRowIdx: Int,
+): List<String> {
+    val headerCells = rows.getOrNull(headerRowIdx)
         .orEmpty()
         .filter { cell ->
-            cell.rowIdx == HEADER_ROW_IDX &&
+            cell.rowIdx == headerRowIdx &&
                 cell.colIdx >= FIRST_GROUP_COL_IDX &&
                 !cell.value.isNullOrBlank()
         }
 
     return headerCells
         .flatMap { headerCell ->
-            val subheaderCells = rows.getOrNull(SUBHEADER_ROW_IDX)
+            val subheaderCells = rows.getOrNull(subheaderRowIdx)
                 .orEmpty()
                 .filter { subheaderCell ->
-                    subheaderCell.rowIdx == SUBHEADER_ROW_IDX &&
+                    subheaderCell.rowIdx == subheaderRowIdx &&
                         subheaderCell.colIdx in headerCell.colIdx..headerCell.endColIdx &&
                         !subheaderCell.value.isNullOrBlank()
                 }
@@ -170,8 +174,6 @@ private fun combineGroupName(headerName: String, subheaderName: String): String 
     }
 }
 
-private const val HEADER_ROW_IDX = 1
-private const val SUBHEADER_ROW_IDX = 2
 private const val FIRST_GROUP_COL_IDX = 3
 
 private val WHITESPACE_REGEX = Regex("\\s+")

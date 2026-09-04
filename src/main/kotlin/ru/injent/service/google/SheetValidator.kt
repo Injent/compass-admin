@@ -42,6 +42,22 @@ class SheetValidatorScope(
             }
     }
 
+    internal val firstScheduleRowIdx: Int? = rows.asSequence()
+        .flatMap(List<Cell>::asSequence)
+        .filter { cell -> cell.borders != null }
+        .minOfOrNull(Cell::rowIdx)
+
+    internal val lastScheduleRowIdx: Int? = rows.asSequence()
+        .flatMap(List<Cell>::asSequence)
+        .filter { cell -> cell.borders != null }
+        .maxOfOrNull(Cell::endRowIdx)
+
+    internal val headerRowIdx: Int?
+        get() = firstScheduleRowIdx?.plus(1)
+
+    internal val subheaderRowIdx: Int?
+        get() = headerRowIdx?.plus(1)
+
     private val initialErrorCells = rows.flatten().filter(Cell::hasBackground)
 
     /**
@@ -161,8 +177,16 @@ data class Cell(
     }
 }
 
-internal fun SheetValidatorScope.scheduleGroupNames(): List<String> =
-    scheduleGroupNamesFromHeaders(rows)
+internal fun SheetValidatorScope.scheduleGroupNames(): List<String> {
+    val detectedHeaderRowIdx = headerRowIdx ?: return emptyList()
+    val detectedSubheaderRowIdx = subheaderRowIdx ?: return emptyList()
+
+    return scheduleGroupNamesFromHeaders(
+        rows = rows,
+        headerRowIdx = detectedHeaderRowIdx,
+        subheaderRowIdx = detectedSubheaderRowIdx,
+    )
+}
 
 private fun String.normalizeCellValue(): String =
     replace(LINE_BREAKS_REGEX, " ")
