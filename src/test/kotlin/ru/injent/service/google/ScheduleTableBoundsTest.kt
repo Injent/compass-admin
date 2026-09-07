@@ -172,6 +172,11 @@ class ScheduleTableBoundsTest {
                 it.comment == "Заголовок без подзаголовков не должен объединяться по столбцам"
             }
         )
+        assertFalse(
+            scope.getAccumulatedErrors().any {
+                it.comment == "Таблица расписания должна начинаться не раньше второй строки"
+            }
+        )
     }
 
     private fun sheet(vararg rows: RowData): Sheet =
