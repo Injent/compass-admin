@@ -7,12 +7,20 @@ import ru.injent.service.google.isWeekdayName
 
 class LegendValidator : SheetValidator {
     override fun SheetValidatorScope.validate() {
+        validateScheduleStartsNoEarlierThanSecondRow()
         val detectedHeaderRowIdx = headerRowIdx ?: return
         val detectedLastScheduleRowIdx = lastScheduleRowIdx ?: return
         val fallbackFirstDayRow = validateCorpusHeaders(detectedHeaderRowIdx)
 
         validateTableHeaders(detectedHeaderRowIdx, subheaderRowIdx)
         validateDayBlocks(firstDayRowIdx ?: fallbackFirstDayRow, detectedLastScheduleRowIdx)
+    }
+}
+
+private fun SheetValidatorScope.validateScheduleStartsNoEarlierThanSecondRow() {
+    val firstRowIdx = firstScheduleRowIdx?.takeIf { it < 1 } ?: return
+    rows[firstRowIdx].firstOrNull { it.borders != null }?.test {
+        error("Таблица расписания должна начинаться не раньше второй строки")
     }
 }
 

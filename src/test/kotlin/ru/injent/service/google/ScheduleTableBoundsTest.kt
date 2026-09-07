@@ -10,10 +10,12 @@ import com.google.api.services.sheets.v4.model.GridRange
 import com.google.api.services.sheets.v4.model.RowData
 import com.google.api.services.sheets.v4.model.Sheet
 import ru.injent.service.validator.LegendValidator
+import ru.injent.service.validator.LessonValidator
 import ru.injent.service.validator.lessonCells
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class ScheduleTableBoundsTest {
     @Test
@@ -37,6 +39,64 @@ class ScheduleTableBoundsTest {
         assertEquals(5, scope.lastScheduleRowIdx)
         assertEquals(listOf("ПРИ-101"), scope.scheduleGroupNames())
         assertEquals(listOf("Математика"), scope.lessonCells().map(Cell::value))
+
+        with(LegendValidator()) { scope.validate() }
+        assertFalse(
+            scope.getAccumulatedErrors().any {
+                it.comment == "Таблица расписания должна начинаться не раньше второй строки"
+            }
+        )
+    }
+
+    @Test
+    fun `schedule table cannot start on first row`() {
+        val scope = SheetValidatorScope(
+            sheet(row(cell(bordered = true)))
+        )
+
+        with(LegendValidator()) { scope.validate() }
+
+        assertTrue(
+            scope.getAccumulatedErrors().any {
+                it.comment == "Таблица расписания должна начинаться не раньше второй строки"
+            }
+        )
+    }
+
+    @Test
+    fun `top-only border does not extend schedule table`() {
+        val scope = SheetValidatorScope(
+            sheet(
+                row(cell(bordered = true)),
+                row(cell(bordered = true)),
+                row(cell(topBordered = true)),
+            )
+        )
+
+        assertEquals(0, scope.firstScheduleRowIdx)
+        assertEquals(1, scope.lastScheduleRowIdx)
+    }
+
+    @Test
+    fun `subject details in round brackets are rejected`() {
+        val scope = SheetValidatorScope(
+            sheet(
+                row(cell(), cell("1 корпус", true), cell("2 корпус", true), cell("ПРИ-101", true)),
+                row(
+                    cell("понедельник", true),
+                    cell("08.30-10.05", true),
+                    cell("09.00-10.35", true),
+                    cell("Математика (геометрия) №103 (Кузечева А.В.)", true),
+                ),
+            )
+        )
+
+        with(LessonValidator()) { scope.validate() }
+
+        assertEquals(
+            listOf("В круглых скобках должен быть указан только преподаватель"),
+            scope.getAccumulatedErrors().map(CellError::comment),
+        )
     }
 
     @Test
@@ -130,14 +190,19 @@ class ScheduleTableBoundsTest {
 
     private fun row(vararg cells: CellData): RowData = RowData().setValues(cells.toList())
 
-    private fun cell(value: String? = null, bordered: Boolean = false): CellData = CellData().apply {
+    private fun cell(
+        value: String? = null,
+        bordered: Boolean = false,
+        topBordered: Boolean = false,
+    ): CellData = CellData().apply {
         if (value != null) {
             userEnteredValue = ExtendedValue().apply { stringValue = value }
         }
-        if (bordered) {
+        if (bordered || topBordered) {
             userEnteredFormat = CellFormat().apply {
                 borders = Borders().apply {
-                    bottom = Border().apply { style = "SOLID" }
+                    if (bordered) bottom = Border().apply { style = "SOLID" }
+                    if (topBordered) top = Border().apply { style = "SOLID" }
                 }
             }
         }

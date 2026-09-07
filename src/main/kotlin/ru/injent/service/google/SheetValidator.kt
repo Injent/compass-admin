@@ -42,9 +42,16 @@ class SheetValidatorScope(
             }
     }
 
-    private val borderedRowIndexes = rows.asSequence()
+    private val borderedCells = rows.asSequence()
         .flatMap(List<Cell>::asSequence)
         .filter { cell -> cell.borders != null }
+
+    private val borderedRowIndexes = borderedCells
+        .flatMap { cell -> (cell.rowIdx..cell.endRowIdx).asSequence() }
+        .toSet()
+
+    private val scheduleContentRowIndexes = borderedCells
+        .filter { cell -> cell.borders?.isTopOnly == false }
         .flatMap { cell -> (cell.rowIdx..cell.endRowIdx).asSequence() }
         .toSet()
 
@@ -52,7 +59,7 @@ class SheetValidatorScope(
 
     internal val lastScheduleRowIdx: Int? = firstScheduleRowIdx?.let { firstRow ->
         generateSequence(firstRow) { rowIdx -> rowIdx + 1 }
-            .takeWhile(borderedRowIndexes::contains)
+            .takeWhile { rowIdx -> rowIdx == firstRow || rowIdx in scheduleContentRowIndexes }
             .last()
     }
 
@@ -200,7 +207,10 @@ data class Cell(
         val left: Boolean,
         val right: Boolean,
         val bottom: Boolean
-    )
+    ) {
+        val isTopOnly: Boolean
+            get() = top && !left && !right && !bottom
+    }
 
     override fun toString(): String {
         return "Cell($rowIdx:$colIdx${if (isMerged) "$endRowIdx:$endColIdx" else ""} '$value')"

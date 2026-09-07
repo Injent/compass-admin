@@ -9,7 +9,7 @@ google
 tokens
 
 application.yaml
-compassadmin.db
+data/compassadmin.db
 *.db
 *.sqlite
 *.sqlite3

@@ -131,7 +131,10 @@ private fun validateTeacherNameFormat(rawName: String) {
     }
 
     val dotCount = teacherName.count { it == '.' }
-    if (dotCount !in 1..2) {
+    if (dotCount == 0) {
+        error("В круглых скобках должен быть указан только преподаватель")
+    }
+    if (dotCount > 2) {
         error("У преподавателя должно быть 1 или 2 точки в инициалах")
     }
     if (!TEACHER_NAME_REGEX.matches(teacherName)) {

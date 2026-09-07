@@ -58,21 +58,20 @@
               <div class="config-field">
                 <m3e-form-field variant="outlined" class="density-3" hide-subscript="always">
                   <label slot="label" for="term-start-date">Дата начала семестра</label>
-                  <input autocomplete="off"
-                         id="term-start-date"
-                         class="config-edit-input config-date-input"
-                         name="termStartDate"
-                         required
-                         pattern="\d{4}-\d{2}-\d{2}"
-                         data-validation="date"
-                         value="${remoteConfig.termStartDate?html}" />
+                  <m3e-date-input id="term-start-date"
+                                  class="config-edit-input config-date-input"
+                                  name="termStartDate"
+                                  required
+                                  data-validation="date"
+                                  value="${remoteConfig.termStartDate?html}">
+                  </m3e-date-input>
                   <m3e-icon-button slot="suffix">
                     <m3e-icon name="calendar_today"></m3e-icon>
                     <m3e-datepicker-toggle for="term-start-date-picker"></m3e-datepicker-toggle>
                   </m3e-icon-button>
                   <span slot="hint">YYYY-MM-DD</span>
                 </m3e-form-field>
-                <m3e-datepicker id="term-start-date-picker"></m3e-datepicker>
+                <m3e-datepicker id="term-start-date-picker" for="term-start-date"></m3e-datepicker>
               </div>
             </div>
           </div>
@@ -317,7 +316,7 @@
 
     function updateSubscripts() {
       form.querySelectorAll('m3e-form-field').forEach(field => {
-        const control = field.querySelector('input, m3e-input-chip-set');
+        const control = field.querySelector('input, m3e-date-input, m3e-input-chip-set');
         if (!control) return;
 
         const focused = field.contains(document.activeElement);
