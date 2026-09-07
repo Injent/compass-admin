@@ -18,7 +18,7 @@ class LegendValidator : SheetValidator {
 }
 
 private fun SheetValidatorScope.validateScheduleStartsNoEarlierThanSecondRow() {
-    val firstRowIdx = firstScheduleRowIdx?.takeIf { it < 1 && it != headerRowIdx } ?: return
+    val firstRowIdx = (headerRowIdx ?: firstScheduleRowIdx)?.takeIf { it < 1 } ?: return
     rows[firstRowIdx].firstOrNull { it.borders != null }?.test {
         error("Таблица расписания должна начинаться не раньше второй строки")
     }

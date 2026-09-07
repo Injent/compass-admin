@@ -64,6 +64,27 @@ class ScheduleTableBoundsTest {
     }
 
     @Test
+    fun `title on first row is not treated as schedule table start`() {
+        val scope = SheetValidatorScope(
+            sheet(
+                row(cell("Расписание", bordered = true), cell(), cell(), cell()),
+                row(cell(bordered = true), cell("1 корпус", true), cell("2 корпус", true), cell("ПРИ-101", true)),
+                row(cell("понедельник", true), cell("08.30-10.05", true), cell("09.00-10.35", true), cell("Математика", true)),
+            )
+        )
+
+        with(LegendValidator()) { scope.validate() }
+
+        assertEquals(0, scope.firstScheduleRowIdx)
+        assertEquals(1, scope.headerRowIdx)
+        assertFalse(
+            scope.getAccumulatedErrors().any {
+                it.comment == "Таблица расписания должна начинаться не раньше второй строки"
+            }
+        )
+    }
+
+    @Test
     fun `top-only border does not extend schedule table`() {
         val scope = SheetValidatorScope(
             sheet(
@@ -170,11 +191,6 @@ class ScheduleTableBoundsTest {
         assertFalse(
             scope.getAccumulatedErrors().any {
                 it.comment == "Заголовок без подзаголовков не должен объединяться по столбцам"
-            }
-        )
-        assertFalse(
-            scope.getAccumulatedErrors().any {
-                it.comment == "Таблица расписания должна начинаться не раньше второй строки"
             }
         )
     }
