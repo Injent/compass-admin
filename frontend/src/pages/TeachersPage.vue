@@ -115,6 +115,7 @@ onMounted(load)
                 <m3e-icon-button v-else aria-label="Редактировать" @click.stop="openEditor(teacher)"><m3e-icon name="edit" /></m3e-icon-button>
               </div>
             </m3e-list-action>
+            <m3e-divider></m3e-divider>
           </template>
         </VirtualList>
         <div v-else class="empty-state"><m3e-icon name="co_present" /><m3e-heading variant="headline" size="small">Преподаватели не найдены</m3e-heading></div>

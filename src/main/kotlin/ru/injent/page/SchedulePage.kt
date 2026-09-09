@@ -171,7 +171,7 @@ fun Routing.schedulePage(
     }
 
     sse("/api/schedule/approve/events") {
-        approvalState.onStart { emit(approvalState.value) }.collectLatest { state ->
+        approvalState.collect { state ->
             send(data = Json.encodeToString(state), event = "approval")
         }
     }

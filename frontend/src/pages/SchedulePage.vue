@@ -225,6 +225,7 @@ onBeforeUnmount(() => { events?.close(); approvalEvents?.close() })
                 <m3e-icon-button v-else aria-label="Скачать файл" @click.stop="downloadFile(file.fileId)"><m3e-icon name="download" /></m3e-icon-button>
               </div>
             </m3e-list-action>
+            <m3e-divider></m3e-divider>
           </template>
         </VirtualList>
         <div v-else class="empty-state"><m3e-icon name="calendar_today" /><m3e-heading variant="headline" size="small">Файлы не найдены</m3e-heading></div>
