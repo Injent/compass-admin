@@ -14,6 +14,7 @@ button, input { font: inherit; }
 #file-search-bar, #teacher-search-bar { width: min(620px, 50vw); height: 48px; }
 .schedule-pane { display: block; flex: 1; min-height: 0; width: 100%; overflow: hidden; --m3e-content-pane-container-shape: 24px 0 0; --m3e-content-pane-container-color: var(--md-sys-color-surface-container-lowest); --m3e-content-pane-container-padding: 0px; }
 .list-page-content, .config-content { box-sizing: border-box; display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 16px; }
+.list-page-content { padding-block: 0; }
 .schedule-filter-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex: none; margin-bottom: 16px; }
 .approve-wrapper { flex: none; }
 .message { display: flex; align-items: center; gap: 8px; flex: none; padding: 12px 16px; margin-bottom: 12px; border-radius: 12px; }
