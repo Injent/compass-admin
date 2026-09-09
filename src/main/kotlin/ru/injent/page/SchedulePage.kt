@@ -25,6 +25,8 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import ru.injent.dto.FileStatus
 import ru.injent.dto.SheetsFile
 import ru.injent.service.config.AppConfig
@@ -49,39 +51,19 @@ fun Routing.schedulePage(
 ) {
     val approvalState = MutableStateFlow(ScheduleApprovalState.idle())
 
-    get("/schedule") {
-        if (!call.isHtmxRequest) {
-            call.respond(FreeMarkerContent("index.html", indexModel(call)))
-            return@get
-        }
-
+    get("/api/schedule") {
         call.respond(
-            FreeMarkerContent(
-                "schedule/schedule.html",
-                scheduleModel(
-                    files = googleService.files.value,
-                    filter = call.scheduleFilter,
-                    filesLoaded = googleService.filesLoaded.value,
-                )
+            scheduleView(
+                files = googleService.files.value,
+                filter = call.scheduleFilter,
+                filesLoaded = googleService.filesLoaded.value,
+                googleWaitMessage = googleService.googleWaitMessage.value,
             )
         )
     }
 
-    get("/schedule/list") {
-        call.respond(
-            FreeMarkerContent(
-                "schedule/schedule_list_container.html",
-                scheduleModel(
-                    files = googleService.files.value,
-                    filter = call.scheduleFilter,
-                    filesLoaded = googleService.filesLoaded.value,
-                )
-            )
-        )
-    }
-
-    post("/schedule/upload") {
-        val uploadResult = googleService.withScheduleOperation {
+    post("/api/schedule/upload") {
+        val result = googleService.withScheduleOperation {
             uploadFilesToFreeSlots(
                 googleService = googleService,
                 multipart = call.receiveMultipart(),
@@ -90,73 +72,112 @@ fun Routing.schedulePage(
             )
         }
         call.respond(
-            status = if (uploadResult.error == null) HttpStatusCode.OK else HttpStatusCode.BadRequest,
-            message = FreeMarkerContent(
-                "schedule/schedule_list_container.html",
-                scheduleModel(
-                    files = googleService.files.value,
-                    error = uploadResult.error,
-                    filter = call.scheduleFilter,
-                    filesLoaded = googleService.filesLoaded.value,
-                )
+            status = if (result.error == null) HttpStatusCode.OK else HttpStatusCode.BadRequest,
+            message = scheduleView(
+                files = googleService.files.value,
+                error = result.error,
+                filter = call.scheduleFilter,
+                filesLoaded = googleService.filesLoaded.value,
+                googleWaitMessage = googleService.googleWaitMessage.value,
             )
         )
     }
 
-    post("/schedule/delete") {
-        val selectedIds = call.receiveParameters()
-            .getAll("fileId")
-            .orEmpty()
-            .distinct()
-
-        val existingIds = googleService.files.value
-            .map { file -> file.fileId }
-            .toSet()
-        val fileIds = selectedIds.filter(existingIds::contains)
-
-        val error = when {
-            fileIds.isEmpty() -> "Выберите файлы для удаления"
-            else -> googleService.freeFiles(fileIds).exceptionOrNull()?.message
+    post("/api/schedule/delete") {
+        val requestedIds = call.receive<DeleteScheduleRequest>().ids.distinct()
+        val existingIds = googleService.files.value.map(SheetsFile::fileId).toSet()
+        val fileIds = requestedIds.filter(existingIds::contains)
+        val error = if (fileIds.isEmpty()) {
+            "Выберите файлы для удаления"
+        } else {
+            googleService.freeFiles(fileIds).exceptionOrNull()?.message
         }
-
         call.respond(
-            FreeMarkerContent(
-                "schedule/schedule_list_container.html",
-                scheduleModel(
-                    files = googleService.files.value,
-                    error = error,
-                    filter = call.scheduleFilter,
-                    filesLoaded = googleService.filesLoaded.value,
-                )
+            status = if (error == null) HttpStatusCode.OK else HttpStatusCode.BadRequest,
+            message = scheduleView(
+                files = googleService.files.value,
+                error = error,
+                filter = call.scheduleFilter,
+                filesLoaded = googleService.filesLoaded.value,
+                googleWaitMessage = googleService.googleWaitMessage.value,
             )
         )
     }
 
-    post("/schedule/restore/{fileId}") {
+    post("/api/schedule/restore/{fileId}") {
         val fileId = call.parameters["fileId"].orEmpty()
-        val existingFile = googleService.files.value.firstOrNull { file -> file.fileId == fileId }
-
+        val existingFile = googleService.files.value.firstOrNull { it.fileId == fileId }
         val error = when {
             existingFile == null -> "Файл не найден"
             existingFile.status != FileStatus.EMPTY -> "Файл уже восстановлен"
-            else -> try {
-                googleService.restore(fileId).exceptionOrNull()?.message
-            } catch (error: Exception) {
-                error.message
-            }
+            else -> runCatching { googleService.restore(fileId).getOrThrow() }.exceptionOrNull()?.message
         }
-
         call.respond(
-            FreeMarkerContent(
-                "schedule/schedule_list_container.html",
-                scheduleModel(
-                    files = googleService.files.value,
-                    error = error,
-                    filter = call.scheduleFilter,
-                    filesLoaded = googleService.filesLoaded.value,
-                )
+            status = if (error == null) HttpStatusCode.OK else HttpStatusCode.BadRequest,
+            message = scheduleView(
+                files = googleService.files.value,
+                error = error,
+                filter = call.scheduleFilter,
+                filesLoaded = googleService.filesLoaded.value,
+                googleWaitMessage = googleService.googleWaitMessage.value,
             )
         )
+    }
+
+    sse("/api/schedule/events") {
+        googleService.scheduleUpdates
+            .onStart { emit(googleService.files.value) }
+            .collectLatest { files ->
+                send(
+                    data = Json.encodeToString(
+                        scheduleView(files, filter = call.scheduleFilter, filesLoaded = googleService.filesLoaded.value, googleWaitMessage = googleService.googleWaitMessage.value)
+                    ),
+                    event = "schedule"
+                )
+            }
+    }
+
+    get("/api/schedule/approve/preview") {
+        val files = googleService.files.value.filter { it.status != FileStatus.EMPTY }
+        call.respond(
+            ScheduleApprovalPreview(
+                groupsToRemove = googleService.groupsToRemove(),
+                duplicateGroups = files.flatMap(SheetsFile::conflictGroups).distinct().sorted(),
+            )
+        )
+    }
+
+    post("/api/schedule/approve") {
+        if (approvalState.value.status != ScheduleApprovalStatus.IDLE &&
+            approvalState.value.status != ScheduleApprovalStatus.ERROR
+        ) {
+            call.respond(HttpStatusCode.Accepted)
+            return@post
+        }
+
+        approvalState.value = ScheduleApprovalState(ScheduleApprovalStatus.RUNNING, 0, "Файлы отправляются")
+        applicationScope.launch {
+            googleService.withScheduleOperation {
+                sendApprovedScheduleFiles(googleService, appConfig, httpClient, approvalState, logger)
+            }
+            if (approvalState.value.status == ScheduleApprovalStatus.SUCCESS) {
+                delay(5.seconds)
+                if (approvalState.value.status == ScheduleApprovalStatus.SUCCESS) {
+                    approvalState.value = ScheduleApprovalState.idle()
+                }
+            }
+        }
+        call.respond(HttpStatusCode.Accepted)
+    }
+
+    sse("/api/schedule/approve/events") {
+        approvalState.onStart { emit(approvalState.value) }.collectLatest { state ->
+            send(data = Json.encodeToString(state), event = "approval")
+        }
+    }
+
+    get("/schedule") {
+        call.respond(FreeMarkerContent("index.html", indexModel(call)))
     }
 
     get("/schedule/download") {
@@ -200,104 +221,6 @@ fun Routing.schedulePage(
         }
     }
 
-    sse("/schedule/list/sse") {
-        googleService.scheduleUpdates
-            .map { files ->
-                scheduleModel(
-                    files = files,
-                    filter = call.scheduleFilter,
-                    filesLoaded = googleService.filesLoaded.value,
-                )
-            }
-            .onStart {
-                emit(
-                    scheduleModel(
-                        files = googleService.files.value,
-                        filter = call.scheduleFilter,
-                        filesLoaded = googleService.filesLoaded.value,
-                    )
-                )
-            }
-            .drop(1)
-            .collectLatest { model ->
-                send(
-                    data = renderTemplate("schedule/schedule_list.html", model),
-                    event = "ScheduleListUpdate"
-                )
-            }
-    }
-
-    get("/schedule/approve/preview") {
-        val files = googleService.files.value
-            .filter { file -> file.status != FileStatus.EMPTY }
-        call.respond(
-            ScheduleApprovalPreview(
-                groupsToRemove = googleService.groupsToRemove(),
-                duplicateGroups = files
-                    .flatMap(SheetsFile::conflictGroups)
-                    .distinct()
-                    .sorted(),
-            )
-        )
-    }
-
-    post("/schedule/approve") {
-        if (approvalState.value.status == ScheduleApprovalStatus.RUNNING ||
-            approvalState.value.status == ScheduleApprovalStatus.SUCCESS
-        ) {
-            call.respond(HttpStatusCode.Accepted)
-            return@post
-        }
-
-        approvalState.value = ScheduleApprovalState(
-            status = ScheduleApprovalStatus.RUNNING,
-            progress = 0,
-            message = "Файлы отправляются"
-        )
-
-        applicationScope.launch {
-            googleService.withScheduleOperation {
-                sendApprovedScheduleFiles(
-                    googleService = googleService,
-                    appConfig = appConfig,
-                    httpClient = httpClient,
-                    approvalState = approvalState,
-                    logger = logger,
-                )
-            }
-            if (approvalState.value.status == ScheduleApprovalStatus.SUCCESS) {
-                delay(5.seconds)
-                if (approvalState.value.status == ScheduleApprovalStatus.SUCCESS) {
-                    approvalState.value = ScheduleApprovalState.idle()
-                }
-            }
-        }
-
-        call.respond(HttpStatusCode.Accepted)
-    }
-
-    sse("/schedule/approve/sse") {
-        approvalState
-            .onStart { emit(approvalState.value) }
-            .collectLatest { state ->
-                send(
-                    data = renderTemplate("schedule/approval_snackbar.html", state.toModel()),
-                    event = "ScheduleApprovalSnackbar"
-                )
-            }
-    }
-
-    get("/schedule/corrections/{fileId}") {
-        call.respond(HttpStatusCode.NotFound)
-    }
-
-    post("/schedule/corrections/{fileId}/suggest") {
-        call.respond(HttpStatusCode.NotFound)
-    }
-
-    post("/schedule/corrections/{fileId}/apply") {
-        call.respond(HttpStatusCode.NotFound)
-    }
 }
 
 private suspend fun sendApprovedScheduleFiles(
@@ -325,16 +248,17 @@ private suspend fun sendApprovedScheduleFiles(
             "Все файлы должны быть проверены без ошибок"
         }
         val groupsToRemove = googleService.groupsToRemove()
+        val changedFiles = files.filter(SheetsFile::hasChanges)
 
         approvalState.value = ScheduleApprovalState.running(10)
 
         var scheduleResponse: CompassApiResponse? = null
-        if (files.isNotEmpty()) {
+        if (changedFiles.isNotEmpty()) {
             scheduleResponse = sendScheduleWithRetry(
                 googleService = googleService,
                 appConfig = appConfig,
                 httpClient = httpClient,
-                files = files,
+                files = changedFiles,
                 logger = logger,
             )
         }
@@ -350,20 +274,22 @@ private suspend fun sendApprovedScheduleFiles(
             googleService.deleteSyncedGroups(groupsToRemove)
         }
 
+        googleService.markScheduleApproved(changedFiles, files.mapTo(mutableSetOf(), SheetsFile::fileId))
+
         val removedGroupsText = groupsToRemove
             .takeIf(List<String>::isNotEmpty)
             ?.joinToString(", ")
             ?: "нет"
         logger.info(
-            "Schedule submission completed: filesSent=${files.size}, " +
+            "Schedule submission completed: filesSent=${changedFiles.size}, " +
                 "removedGroups=$removedGroupsText, " +
-                "uploadNewSchedules=${scheduleResponse?.toLogText() ?: "not requested (empty schedule)"}, " +
+                "uploadNewSchedules=${scheduleResponse?.toLogText() ?: "not requested (no changed files)"}, " +
                 "removeGroups=${removedGroupsResponse?.toLogText() ?: "not requested"}"
         )
         approvalState.value = ScheduleApprovalState(
             status = ScheduleApprovalStatus.SUCCESS,
             progress = 100,
-            message = "Расписание отправлено"
+            message = if (changedFiles.isEmpty() && groupsToRemove.isEmpty()) "Нет изменений для отправки" else "Расписание отправлено: файлов ${changedFiles.size}"
         )
     } catch (error: CancellationException) {
         throw error
@@ -536,18 +462,12 @@ private fun multipartFileDisposition(name: String, fileName: String): String {
     return """form-data; name="$name"; filename="$fallback"; filename*=UTF-8''$encoded"""
 }
 
+@Serializable
 private data class ScheduleApprovalState(
     val status: ScheduleApprovalStatus,
     val progress: Int,
     val message: String? = null,
 ) {
-    fun toModel(): Map<String, Any?> =
-        mapOf(
-            "status" to status.name,
-            "progress" to progress,
-            "message" to message
-        )
-
     companion object {
         fun idle(): ScheduleApprovalState =
             ScheduleApprovalState(ScheduleApprovalStatus.IDLE, 0)
@@ -557,6 +477,7 @@ private data class ScheduleApprovalState(
     }
 }
 
+@Serializable
 private enum class ScheduleApprovalStatus {
     IDLE,
     RUNNING,
@@ -708,12 +629,12 @@ private fun contentDisposition(fileName: String): String {
 private val ApplicationCall.scheduleFilter: String
     get() = request.queryParameters["f"] ?: request.queryParameters["filter"] ?: "all"
 
-private val ApplicationCall.isHtmxRequest: Boolean
-    get() = request.headers["HX-Request"] == "true"
-
 private data class UploadResult(
     val error: String? = null
 )
+
+@Serializable
+private data class DeleteScheduleRequest(val ids: List<String>)
 
 @Serializable
 private data class ScheduleApprovalPreview(

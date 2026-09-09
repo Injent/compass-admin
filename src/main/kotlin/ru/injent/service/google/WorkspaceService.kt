@@ -37,8 +37,8 @@ import kotlinx.serialization.json.Json
 import ru.injent.dto.FileStatus
 import ru.injent.dto.SheetsFile
 import ru.injent.service.ScheduleGroup
+import ru.injent.service.ScheduleChangeTracker
 import ru.injent.service.ScheduleGroupService
-import ru.injent.service.normalizedGroupName
 import ru.injent.service.validator.LegendValidator
 import ru.injent.service.validator.LessonValidator
 import ru.injent.service.validator.TeacherValidator
@@ -60,7 +60,11 @@ class NewGoogleService(
     private val lessonValidator: LessonValidator,
     private val teacherValidator: TeacherValidator,
     private val scheduleGroupService: ScheduleGroupService,
+    private val changeTracker: ScheduleChangeTracker,
 ) {
+
+    private val sheetsRequests = SheetsRequestGate()
+    val googleWaitMessage: StateFlow<String?> get() = sheetsRequests.message
 
     private val fileMutexes = mutableMapOf<String, Mutex>()
     private val fileMutexesGuard = Mutex()
@@ -78,7 +82,7 @@ class NewGoogleService(
         field = MutableStateFlow(false)
 
     val scheduleUpdates: Flow<List<SheetsFile>>
-        get() = merge(files, scheduleGroupVersion.map { files.value })
+        get() = merge(files, scheduleGroupVersion.map { files.value }, googleWaitMessage.map { files.value })
 
     suspend fun loadFiles(): Result<Unit> {
         val result = withScheduleOperation {
@@ -204,6 +208,18 @@ class NewGoogleService(
         }
     }
 
+    fun markScheduleApproved(sentFiles: List<SheetsFile>, activeFileIds: Set<String>) {
+        val fingerprints = sentFiles.associate { it.fileId to requireNotNull(it.contentFingerprint) }
+        changeTracker.approve(fingerprints, activeFileIds)
+        files.update { current ->
+            current.map { file ->
+                if (file.fileId in fingerprints && file.contentFingerprint == fingerprints[file.fileId]) {
+                    file.copy(hasChanges = false)
+                } else file
+            }
+        }
+    }
+
     fun groupsToRemove(): List<String> {
         val emptyFileIds = files.value
             .filter { it.status == FileStatus.EMPTY }
@@ -289,14 +305,16 @@ class NewGoogleService(
                         )
                     }
                     val updateSheetsDeferred = async {
-                        sheets.spreadsheets()
-                            .batchUpdate(
-                                fileId,
-                                BatchUpdateSpreadsheetRequest()
-                                    .setRequests(accumulatedErrors + fixedErrors)
-                                    .also { if (it.requests.isEmpty()) return@async }
-                            )
-                            .execute()
+                        if (accumulatedErrors.isEmpty() && fixedErrors.isEmpty()) return@async
+                        sheetsRequests.execute {
+                            sheets.spreadsheets()
+                                .batchUpdate(
+                                    fileId,
+                                    BatchUpdateSpreadsheetRequest()
+                                        .setRequests(accumulatedErrors + fixedErrors)
+                                )
+                                .execute()
+                        }
                     }
                     val updateStatusDeferred = async {
                         val newStatus = if (accumulatedErrors.isEmpty()) FileStatus.VALID else FileStatus.INVALID
@@ -399,30 +417,44 @@ class NewGoogleService(
         if (replacements.isEmpty()) return@runResulting
 
         val sheet = getSheet(fileId).getOrThrow()
-        sheets.spreadsheets()
-            .batchUpdate(
-                fileId,
-                BatchUpdateSpreadsheetRequest()
-                    .setRequests(
-                        replacements.map { replacement ->
-                            CellValueRequest(
-                                sheetId = sheet.properties.sheetId,
-                                colIdx = replacement.colIdx,
-                                rowIdx = replacement.rowIdx,
-                                value = replacement.value
-                            )
-                        }
-                    )
-            )
-            .execute()
+        sheetsRequests.execute {
+            sheets.spreadsheets()
+                .batchUpdate(
+                    fileId,
+                    BatchUpdateSpreadsheetRequest()
+                        .setRequests(
+                            replacements.map { replacement ->
+                                CellValueRequest(
+                                    sheetId = sheet.properties.sheetId,
+                                    colIdx = replacement.colIdx,
+                                    rowIdx = replacement.rowIdx,
+                                    value = replacement.value
+                                )
+                            }
+                        )
+                )
+                .execute()
+        }
     }
 
     private suspend fun getSheet(fileId: String) = runResulting("get sheet '$fileId'") {
-        sheets.spreadsheets()
-            .get(fileId)
-            .setIncludeGridData(true)
-            .execute()
-            .sheets[0]
+        sheetsRequests.execute {
+            sheets.spreadsheets()
+                .get(fileId)
+                .setIncludeGridData(true)
+                .execute()
+                .also { spreadsheet ->
+                    val file = files.value.firstOrNull { it.fileId == fileId }
+                    if (file != null) {
+                        val fingerprint = spreadsheet.scheduleFingerprint(file.name)
+                        val changed = changeTracker.isChanged(fileId, fingerprint)
+                        files.update { current ->
+                            current.map { if (it.fileId == fileId) it.copy(contentFingerprint = fingerprint, hasChanges = changed) else it }
+                        }
+                    }
+                }
+                .sheets[0]
+        }
     }
 
     private fun mergeAppProperties(
@@ -478,6 +510,8 @@ class NewGoogleService(
 
                 file.copy(
                     name = contentScope.name ?: file.name,
+                    hasChanges = if (contentScope.inputStream != null || contentScope.name != null) true else file.hasChanges,
+                    contentFingerprint = if (contentScope.inputStream != null || contentScope.name != null) null else file.contentFingerprint,
                     modifiedTime = Clock.System.now(),
                     uploadTime = contentScope.appProperties[KEY_UPLOAD_TIME]
                         ?.let(String::toLongOrNull)
@@ -557,17 +591,8 @@ class NewGoogleService(
             return@withLock
         }
 
-        val groupsByFile = mutableMapOf<String, List<ScheduleGroup>>()
-        for (file in activeFiles) {
-            val groups = readGroupNames(file.fileId) ?: continue
-
-            groupsByFile[file.fileId] = groups.map { groupName ->
-                ScheduleGroup(
-                    name = groupName,
-                    normalizedName = groupName.normalizedGroupName(),
-                )
-            }
-        }
+        val activeFileIds = activeFiles.mapTo(mutableSetOf()) { it.fileId }
+        val groupsByFile = scheduleGroupService.activeGroupsByFile().filterKeys { it in activeFileIds }
 
         val conflictingGroupNames = groupsByFile
             .flatMap { (fileId, groups) ->

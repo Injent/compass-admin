@@ -11,5 +11,7 @@ data class SheetsFile(
     val uploadTime: Instant,
     val status: FileStatus,
     val canFixWithAi: Boolean,
+    val contentFingerprint: String? = null,
+    val hasChanges: Boolean = true,
     val conflictGroups: List<String> = emptyList(),
 )

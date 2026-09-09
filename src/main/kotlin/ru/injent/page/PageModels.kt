@@ -3,14 +3,15 @@ package ru.injent.page
 import freemarker.template.Configuration
 import io.ktor.server.routing.*
 import kotlinx.datetime.*
+import kotlinx.serialization.Serializable
 import org.koin.ktor.ext.get
 import ru.injent.dto.FileStatus
 import ru.injent.dto.SheetsFile
-import ru.injent.service.google.CellCorrectionSuggestion
 import java.io.StringWriter
 import kotlin.time.Clock
 import kotlin.time.Instant
 
+@Serializable
 data class FileView(
     val fileId: String,
     val name: String,
@@ -21,57 +22,46 @@ data class FileView(
     val icon: String,
     val canFixWithAi: Boolean,
     val supportingText: String?,
+    val hasChanges: Boolean = false,
 )
 
-fun scheduleModel(
+@Serializable
+data class ScheduleView(
+    val files: List<FileView>,
+    val hasUnreadyFiles: Boolean,
+    val canOpenScheduleApproval: Boolean,
+    val error: String? = null,
+    val filter: String,
+    val filesLoaded: Boolean = true,
+    val googleWaitMessage: String? = null,
+)
+
+fun scheduleView(
     files: List<SheetsFile>,
     error: String? = null,
     filter: String = FILTER_ALL,
-    groupsToRemove: List<String> = emptyList(),
     filesLoaded: Boolean = true,
-): Map<String, Any?> {
+    googleWaitMessage: String? = null,
+): ScheduleView {
     val activeFiles = files.filter { it.status != FileStatus.EMPTY }
     val hasActiveFileErrors = activeFiles.any { file ->
         file.status == FileStatus.INVALID || file.status == FileStatus.PROCESSING
     }
     val hasDuplicateGroups = activeFiles.any { file -> file.conflictGroups.isNotEmpty() }
-    val canOpenScheduleApproval = filesLoaded && !hasActiveFileErrors
 
-    return mapOf(
-        "files" to files.filterByScheduleFilter(filter).map(SheetsFile::toView),
-        "hasUnreadyFiles" to (hasActiveFileErrors || hasDuplicateGroups),
-        "canOpenScheduleApproval" to canOpenScheduleApproval,
-        "groupsToRemove" to groupsToRemove,
-        "error" to error,
-        "filter" to filter.normalizeScheduleFilter(),
+    return ScheduleView(
+        files = files.filterByScheduleFilter(filter).map(SheetsFile::toView),
+        hasUnreadyFiles = hasActiveFileErrors || hasDuplicateGroups,
+        canOpenScheduleApproval = filesLoaded && !hasActiveFileErrors,
+        error = error,
+        filter = filter.normalizeScheduleFilter(),
+        filesLoaded = filesLoaded,
+        googleWaitMessage = googleWaitMessage,
     )
 }
 
 fun fileModel(file: SheetsFile): Map<String, Any> =
     mapOf("file" to file.toView())
-
-fun correctionPaneModel(fileId: String): Map<String, Any?> =
-    mapOf("fileId" to fileId)
-
-fun correctionResultsModel(
-    fileId: String,
-    suggestions: List<CellCorrectionSuggestion>,
-    error: String? = null,
-): Map<String, Any?> =
-    mapOf(
-        "fileId" to fileId,
-        "suggestions" to suggestions,
-        "error" to error
-    )
-
-fun correctionApplyResultModel(
-    appliedCount: Int,
-    error: String? = null,
-): Map<String, Any?> =
-    mapOf(
-        "appliedCount" to appliedCount,
-        "error" to error
-    )
 
 context(routing: Routing)
 fun renderTemplate(templateName: String, model: Map<String, Any?>): String {
@@ -90,6 +80,7 @@ private fun SheetsFile.toView(): FileView =
         createdTime = uploadTime.formatScheduleDate(),
         icon = displayStatus().toIcon(),
         canFixWithAi = canFixWithAi,
+        hasChanges = status != FileStatus.EMPTY && hasChanges,
         supportingText = conflictGroups
             .takeIf { groups -> status != FileStatus.EMPTY && groups.isNotEmpty() }
             ?.let { groups -> "расписание с группами: ${groups.joinToString(", ")} уже существует" },

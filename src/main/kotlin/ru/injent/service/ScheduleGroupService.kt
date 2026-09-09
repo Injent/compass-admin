@@ -88,6 +88,14 @@ class ScheduleGroupService(
         markFilesDeleted(missingIds)
     }
 
+    internal fun activeGroupsByFile(): Map<String, List<ScheduleGroup>> = transaction(database) {
+        ScheduleGroups.selectAll()
+            .filter { it[ScheduleGroups.syncStatus] == SCHEDULE_GROUP_SYNC_STATUS_ACTIVE }
+            .groupBy({ it[ScheduleGroups.fileId] }, {
+                ScheduleGroup(it[ScheduleGroups.name], it[ScheduleGroups.normalizedName])
+            })
+    }
+
     fun groupsToRemove(): List<String> = transaction(database) {
         val rows = ScheduleGroups.selectAll().toList()
         val activeGroupNames = rows

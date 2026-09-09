@@ -5,6 +5,8 @@ import org.jetbrains.exposed.v1.jdbc.SchemaUtils
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
+import ru.injent.service.ScheduleChangeTracker
+import ru.injent.service.ScheduleFileApprovals
 import ru.injent.service.ScheduleGroupService
 
 val databaseModule = module {
@@ -15,10 +17,11 @@ val databaseModule = module {
             .also(::initializeDatabase)
     }
     singleOf(::ScheduleGroupService)
+    singleOf(::ScheduleChangeTracker)
 }
 
 private fun initializeDatabase(database: Database) {
     transaction(database) {
-        SchemaUtils.create(Teachers, ScheduleGroups)
+        SchemaUtils.create(Teachers, ScheduleGroups, ScheduleFileApprovals)
     }
 }

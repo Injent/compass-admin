@@ -22,6 +22,9 @@ class ScheduleGroupServiceTest {
             service.markMissingFilesDeleted(listOf("existing-file"))
 
             assertEquals(listOf("при-101"), service.groupsToRemove())
+            assertEquals(mapOf("existing-file" to listOf(ScheduleGroup("ПРИ-102", "при-102"))), service.activeGroupsByFile())
+            service.syncGroups("existing-file", listOf("ПРИ-103"))
+            assertEquals(listOf(ScheduleGroup("ПРИ-103", "при-103")), service.activeGroupsByFile()["existing-file"])
         } finally {
             Files.deleteIfExists(databaseFile)
         }

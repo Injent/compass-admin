@@ -1,0 +1,76 @@
+:root { --md-sys-color-background: var(--md-sys-color-surface-container-low); color-scheme: light; }
+html, body, #app { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+body { font-family: Roboto, sans-serif; }
+m3e-theme { display: block; width: 100%; height: 100%; }
+button, input { font: inherit; }
+.app-layout { display: flex; width: 100%; height: 100dvh; }
+.nav-column { display: flex; flex-direction: column; align-items: flex-start; flex: none; height: 100%; }
+.nav-column-spacer { flex: 1; }
+.logout-form { margin-left: 28px; min-height: 64px; display: flex; align-items: center; }
+.app-content { flex: 1; min-width: 0; padding-top: 8px; overflow: hidden; }
+.page-shell { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; }
+.schedule-header { display: flex; align-items: center; justify-content: space-between; flex: none; gap: 16px; min-height: 48px; margin-bottom: 8px; padding-right: 16px; }
+.actions-wrapper { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+#file-search-bar, #teacher-search-bar { width: min(620px, 50vw); height: 48px; }
+.schedule-pane { display: block; flex: 1; min-height: 0; width: 100%; overflow: hidden; --m3e-content-pane-container-shape: 24px 0 0; --m3e-content-pane-container-color: var(--md-sys-color-surface-container-lowest); --m3e-content-pane-container-padding: 0px; }
+.list-page-content, .config-content { box-sizing: border-box; display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 16px; }
+.schedule-filter-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex: none; margin-bottom: 16px; }
+.approve-wrapper { flex: none; }
+.message { display: flex; align-items: center; gap: 8px; flex: none; padding: 12px 16px; margin-bottom: 12px; border-radius: 12px; }
+.error-message { color: var(--md-sys-color-on-error-container); background: var(--md-sys-color-error-container); }
+.success-message { color: #0d5224; background: #d7f8df; }
+.table-heading { box-sizing: border-box; flex: none; min-height: 48px; align-items: center; padding: 0 16px; color: var(--md-sys-color-on-surface-variant); font-size: 14px; }
+.schedule-grid { display: grid; grid-template-columns: 38px minmax(180px, 1fr) 160px 160px 128px; align-items: center; gap: 12px; width: 100%; min-width: 0; }
+.teacher-grid { display: grid; grid-template-columns: 48px minmax(220px, 1fr) 48px; align-items: center; gap: 12px; width: 100%; }
+.file-name { display: flex; align-items: center; gap: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-name small { overflow: hidden; color: var(--md-sys-color-error); text-overflow: ellipsis; }
+.status-icon { display: grid; width: 100%; height: 100%; place-items: center; color: white; font-size: 19px; }
+.page-virtual-list { flex: 1; min-height: 0; }
+.virtual-list { overflow: auto; contain: strict; }
+.virtual-list-space { position: relative; width: 100%; }
+.virtual-list-item { position: absolute; inset: 0 0 auto; box-sizing: border-box; width: 100%; padding-bottom: 1px; }
+.virtual-action { display: block; box-sizing: border-box; width: 100%; height: 100%; --m3e-list-item-container-shape: 12px; }
+.empty-state { display: flex; flex: 1; min-height: 160px; align-items: center; justify-content: center; flex-direction: column; gap: 16px; color: var(--md-sys-color-on-surface-variant); }
+.empty-state > m3e-icon { font-size: 48px; }
+.app-dialog { width: min(520px, calc(100vw - 48px)); box-sizing: border-box; padding: 24px; border: 0; border-radius: 28px; color: var(--md-sys-color-on-surface); background: var(--md-sys-color-surface-container-high); box-shadow: 0 12px 36px rgb(0 0 0 / 25%); }
+.app-dialog::backdrop { background: rgb(0 0 0 / 36%); }
+.app-dialog h2 { margin: 0 0 16px; font-size: 24px; }
+.dialog-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+.dialog-spacer { flex: 1; }
+.dialog-form, .config-form { display: grid; gap: 18px; }
+.teacher-dialog m3e-form-field { width: 100%; }
+.warning { color: var(--md-sys-color-error); }
+.snackbar { position: fixed; z-index: 20; right: 24px; bottom: 24px; max-width: 420px; padding: 14px 18px; border-radius: 12px; color: white; background: #303030; box-shadow: 0 8px 24px rgb(0 0 0 / 25%); }
+.snackbar.success { background: #216e39; }
+.snackbar.error { background: var(--md-sys-color-error); }
+.config-content { overflow: auto; }
+.config-form { width: min(720px, 100%); margin: 0 auto; padding: 8px 0 32px; }
+.config-form > m3e-heading { margin-top: 12px; }
+.support-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 16px; }
+
+@media (max-width: 900px) {
+  .schedule-grid { grid-template-columns: 38px minmax(160px, 1fr) 120px 128px; }
+  .schedule-grid > :nth-child(4) { display: none; }
+  .schedule-header { align-items: flex-start; }
+  #file-search-bar, #teacher-search-bar { width: min(420px, 42vw); }
+}
+
+m3e-nav-rail { flex-shrink: 0; --m3e-nav-rail-top-space: 12px; }
+.app-content, .schedule-header { box-sizing: border-box; }
+m3e-nav-item .nav-item-label { transition: margin-left 0.2s ease-in-out; }
+m3e-nav-item[orientation="horizontal"] .nav-item-label { margin-left: 8px; font-size: 14px; }
+@keyframes slow-spin { to { transform: rotate(360deg); } }
+.processing-shape { animation: slow-spin 10s linear infinite; }
+.processing-shape .status-icon m3e-icon { transform: scaleX(-1); }
+m3e-shape[name="triangle"] .status-icon { font-size: 24px; }
+.wait-message { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+.wait-message m3e-circular-progress-indicator { flex: none; width: 24px; height: 24px; }
+@media (prefers-reduced-motion: reduce) { .processing-shape { animation: none; } }
+
+.status-icon m3e-icon { display: block; line-height: 1; font-size: 20px; color: white; }
+m3e-shape[name="triangle"] .status-icon m3e-icon { font-size: 24px; }
+m3e-shape[name="circle"] .status-icon m3e-icon { font-size: 18px; }
+
+.file-name-content { display: flex; flex-direction: column; min-width: 0; flex: 1; overflow: hidden; }
+.file-name-content strong { overflow: hidden; text-overflow: ellipsis; }
+.file-change-dot { width: 8px; height: 8px; border-radius: 50%; background: #1a73e8; flex: 0 0 8px; margin-inline-start: auto; }

@@ -21,6 +21,24 @@ Application started
 Responding at http://0.0.0.0:9001
 ```
 
+## Frontend
+
+The admin interface is a Vue 3 application in `frontend/` and uses the M3E Web Components package. The production bundle is committed under `static/vue/` so the regular Gradle and Docker builds do not require Node.js.
+
+After changing the frontend, rebuild it with:
+
+```shell
+cd frontend
+pnpm install
+pnpm build
+```
+
+## Schedule confirmation
+
+Confirmation sends only new or changed schedule files. A blue dot at the end of the file-name area marks pending changes. The comparison includes cell values, formulas, merged cells, sheet names and the file name; validation notes and highlighting are ignored.
+
+Successful confirmation saves the comparison fingerprints in SQLite (`schedule_file_approvals`). Failed submissions keep changes pending. The first confirmation after installing the tracker sends all active files; subsequent confirmations send only changes, while removed groups are handled separately. Changes made in Google Sheets are detected by the existing validation callback and checked again before confirmation.
+
 ## Docker
 
 The Gradle Ktor plugin builds the image through Jib. Secret and mutable runtime files are not copied into the image:
