@@ -14,7 +14,6 @@ button, input { font: inherit; }
 #file-search-bar, #teacher-search-bar { width: min(620px, 50vw); height: 48px; }
 .schedule-pane { display: block; flex: 1; min-height: 0; width: 100%; overflow: hidden; --m3e-content-pane-container-shape: 24px 0 0; --m3e-content-pane-container-color: var(--md-sys-color-surface-container-lowest); --m3e-content-pane-container-padding: 0px; }
 .list-page-content, .config-content { box-sizing: border-box; display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 16px; }
-.list-page-content { padding-block: 0; }
 .schedule-filter-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex: none; margin-bottom: 16px; }
 .approve-wrapper { flex: none; }
 .message { display: flex; align-items: center; gap: 8px; flex: none; padding: 12px 16px; margin-bottom: 12px; border-radius: 12px; }
@@ -29,8 +28,8 @@ button, input { font: inherit; }
 .page-virtual-list { flex: 1; min-height: 0; }
 .virtual-list { overflow: auto; contain: strict; }
 .virtual-list-space { position: relative; width: 100%; }
-.virtual-list-item { position: absolute; inset: 0 0 auto; box-sizing: border-box; width: 100%; padding-bottom: 1px; }
-.virtual-action { display: block; box-sizing: border-box; width: 100%; height: 100%; --m3e-list-item-container-shape: 12px; }
+.virtual-list-item { position: absolute; inset: 0 0 auto; box-sizing: border-box; width: 100%; }
+.virtual-action { display: block; box-sizing: border-box; width: 100%; height: 100%; --m3e-list-item-container-shape: 12px; --m3e-list-item-one-line-height: 48px; --m3e-list-item-two-line-height: 48px; --m3e-list-item-three-line-height: 48px; --m3e-list-item-one-line-top-space: 0; --m3e-list-item-one-line-bottom-space: 0; --m3e-list-item-two-line-top-space: 0; --m3e-list-item-two-line-bottom-space: 0; --m3e-list-item-three-line-top-space: 0; --m3e-list-item-three-line-bottom-space: 0; }
 .empty-state { display: flex; flex: 1; min-height: 160px; align-items: center; justify-content: center; flex-direction: column; gap: 16px; color: var(--md-sys-color-on-surface-variant); }
 .empty-state > m3e-icon { font-size: 48px; }
 .app-dialog { width: min(520px, calc(100vw - 48px)); box-sizing: border-box; padding: 24px; border: 0; border-radius: 28px; color: var(--md-sys-color-on-surface); background: var(--md-sys-color-surface-container-high); box-shadow: 0 12px 36px rgb(0 0 0 / 25%); }
@@ -64,8 +63,8 @@ m3e-nav-item[orientation="horizontal"] .nav-item-label { margin-left: 8px; font-
 .processing-shape { animation: slow-spin 10s linear infinite; }
 .processing-shape .status-icon m3e-icon { transform: scaleX(-1); }
 m3e-shape[name="triangle"] .status-icon { font-size: 24px; }
-.wait-message { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
-.wait-message m3e-circular-progress-indicator { flex: none; width: 24px; height: 24px; }
+.wait-message { flex-direction: column; align-items: stretch; background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+.wait-message m3e-linear-progress-indicator { width: 100%; }
 @media (prefers-reduced-motion: reduce) { .processing-shape { animation: none; } }
 
 .status-icon m3e-icon { display: block; line-height: 1; font-size: 20px; color: white; }

@@ -18,6 +18,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
@@ -33,6 +34,7 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import ru.injent.dto.FileStatus
 import ru.injent.dto.SheetsFile
@@ -70,6 +72,11 @@ class NewGoogleService(
     private val fileMutexesGuard = Mutex()
     private val validationJobs = mutableMapOf<String, Job>()
     private val validationJobsGuard = Mutex()
+    private val pendingValidationIds = mutableSetOf<String>()
+    private val validationProgressState = MutableStateFlow(FileValidationProgress())
+    private val readingProgressState = MutableStateFlow<FileValidationProgress?>(null)
+    val processingProgress: FileValidationProgress
+        get() = readingProgressState.value ?: validationProgressState.value
     private val groupConflictsMutex = Mutex()
     // ponytail: one workspace-wide lock; split only if real concurrent administration is required.
     private val scheduleOperationMutex = Mutex()
@@ -82,7 +89,7 @@ class NewGoogleService(
         field = MutableStateFlow(false)
 
     val scheduleUpdates: Flow<List<SheetsFile>>
-        get() = merge(files, scheduleGroupVersion.map { files.value }, googleWaitMessage.map { files.value })
+        get() = merge(files, scheduleGroupVersion.map { files.value }, googleWaitMessage.map { files.value }, validationProgressState.map { files.value }, readingProgressState.map { files.value })
 
     suspend fun loadFiles(): Result<Unit> {
         val result = withScheduleOperation {
@@ -236,15 +243,21 @@ class NewGoogleService(
     }
 
     suspend fun refreshScheduleGroups(): Result<Unit> = runResulting("sync schedule groups") {
-        files.value
-            .filter { file -> file.status != FileStatus.EMPTY }
-            .forEach { file ->
+        val activeFiles = files.value.filter { it.status != FileStatus.EMPTY }
+        readingProgressState.value = FileValidationProgress(total = activeFiles.size)
+        try {
+            activeFiles.forEach { file ->
                 val sheet = getSheet(file.fileId).getOrThrow()
                 scheduleGroupService.syncGroups(
                     fileId = file.fileId,
                     groupNames = SheetValidatorScope(sheet).scheduleGroupNames(),
                 )
+                readingProgressState.update { it?.copy(completed = it.completed + 1) }
             }
+        } catch (error: Throwable) {
+            readingProgressState.value = null
+            throw error
+        }
         notifyScheduleGroupUpdate()
         refreshGroupConflicts()
         Unit
@@ -272,12 +285,17 @@ class NewGoogleService(
     ): Result<Unit> = coroutineScope {
         val currentJob = coroutineContext.job
         val previousJob = validationJobsGuard.withLock {
+            if (pendingValidationIds.isEmpty()) validationProgressState.value = FileValidationProgress()
+            val queuedIds = files.value.filter { it.status == FileStatus.PROCESSING }.map { it.fileId } + fileId
+            val added = queuedIds.count { pendingValidationIds.add(it) }
+            validationProgressState.update { it.copy(total = it.total + added) }
             validationJobs.put(fileId, currentJob)
         }
-        previousJob?.cancelAndJoin()
-
+        var finished = false
         try {
+            previousJob?.cancelAndJoin()
             val result = withScheduleOperation {
+                readingProgressState.value = null
                 val validationResult = runResulting("validating $fileId") {
                     val sheet = getSheet(fileId).getOrThrow()
 
@@ -350,11 +368,19 @@ class NewGoogleService(
                 }
                 validationResult
             }
+            finished = true
             result
         } finally {
-            validationJobsGuard.withLock {
-                if (validationJobs[fileId] == currentJob) {
-                    validationJobs.remove(fileId)
+            withContext(NonCancellable) {
+                validationJobsGuard.withLock {
+                    if (validationJobs[fileId] == currentJob) {
+                        validationJobs.remove(fileId)
+                        pendingValidationIds.remove(fileId)
+                        validationProgressState.update {
+                            if (finished) it.copy(completed = it.completed + 1)
+                            else it.copy(total = it.total - 1)
+                        }
+                    }
                 }
             }
         }
@@ -625,18 +651,24 @@ class NewGoogleService(
     }
 
     private suspend fun syncLoadedFileGroups() {
-        files.value
-            .filter { file -> file.status != FileStatus.EMPTY }
-            .forEach { file ->
-                val groupNames = readGroupNames(file.fileId) ?: return@forEach
+        val activeFiles = files.value.filter { it.status != FileStatus.EMPTY }
+        readingProgressState.value = FileValidationProgress(total = activeFiles.size)
+        try {
+            activeFiles.forEach { file ->
                 try {
-                    scheduleGroupService.syncGroups(file.fileId, groupNames)
+                    val groupNames = readGroupNames(file.fileId)
+                    if (groupNames != null) scheduleGroupService.syncGroups(file.fileId, groupNames)
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Throwable) {
                     logger.error("failed to sync groups for '${file.fileId}'", error)
                 }
+                readingProgressState.update { it?.copy(completed = it.completed + 1) }
             }
+        } catch (error: Throwable) {
+            readingProgressState.value = null
+            throw error
+        }
         notifyScheduleGroupUpdate()
     }
 
@@ -874,3 +906,6 @@ private val ErrorBackgroundColor: Color = Color()
     .setRed(0.957f)
     .setGreen(0.78f)
     .setBlue(0.765f)
+
+@Serializable
+data class FileValidationProgress(val total: Int = 0, val completed: Int = 0)

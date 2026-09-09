@@ -105,7 +105,7 @@ onMounted(load)
         <div class="table-heading teacher-grid"><span>№</span><b>ФИО</b><span /></div>
         <m3e-divider />
         <div v-if="loading" class="empty-state"><m3e-circular-progress-indicator indeterminate /></div>
-        <VirtualList v-else-if="filtered.length" :items="filtered" :item-height="64" class="page-virtual-list">
+        <VirtualList v-else-if="filtered.length" :items="filtered" :item-height="48" class="page-virtual-list">
           <template #default="{ item: teacher, index }">
             <m3e-list-action class="virtual-action" @click="deleteMode ? toggle(teacher.id) : openEditor(teacher)">
               <div class="teacher-grid">

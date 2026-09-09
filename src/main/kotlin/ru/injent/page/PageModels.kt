@@ -7,6 +7,7 @@ import kotlinx.serialization.Serializable
 import org.koin.ktor.ext.get
 import ru.injent.dto.FileStatus
 import ru.injent.dto.SheetsFile
+import ru.injent.service.google.FileValidationProgress
 import java.io.StringWriter
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -34,6 +35,7 @@ data class ScheduleView(
     val filter: String,
     val filesLoaded: Boolean = true,
     val googleWaitMessage: String? = null,
+    val validationProgress: FileValidationProgress = FileValidationProgress(),
 )
 
 fun scheduleView(
@@ -42,6 +44,7 @@ fun scheduleView(
     filter: String = FILTER_ALL,
     filesLoaded: Boolean = true,
     googleWaitMessage: String? = null,
+    validationProgress: FileValidationProgress = FileValidationProgress(),
 ): ScheduleView {
     val activeFiles = files.filter { it.status != FileStatus.EMPTY }
     val hasActiveFileErrors = activeFiles.any { file ->
@@ -57,6 +60,7 @@ fun scheduleView(
         filter = filter.normalizeScheduleFilter(),
         filesLoaded = filesLoaded,
         googleWaitMessage = googleWaitMessage,
+        validationProgress = validationProgress,
     )
 }
 

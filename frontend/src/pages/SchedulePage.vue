@@ -23,6 +23,22 @@ const approval = ref({ status: 'IDLE', progress: 0, message: '' })
 const preview = ref({ groupsToRemove: [], duplicateGroups: [] })
 let events
 let approvalEvents
+const showProcessing = ref(false)
+let hideProcessingTimer
+const validationProgress = computed(() => state.value.validationProgress || { total: 0, completed: 0 })
+const validationPercent = computed(() => validationProgress.value.total
+  ? Math.round(validationProgress.value.completed * 100 / validationProgress.value.total)
+  : 0)
+const processing = computed(() => Boolean(
+  validationProgress.value.completed < validationProgress.value.total ||
+  uploading.value || state.value.googleWaitMessage || state.value.filesLoaded === false ||
+  state.value.files.some(file => file.status === 'PROCESSING')
+))
+watch(processing, active => {
+  clearTimeout(hideProcessingTimer)
+  if (active) showProcessing.value = true
+  else hideProcessingTimer = setTimeout(() => { showProcessing.value = false }, 1500)
+}, { immediate: true })
 
 const files = computed(() => {
   const query = search.value.trim().toLocaleLowerCase('ru')
@@ -155,7 +171,7 @@ onMounted(async () => {
     if (approval.value.status === 'SUCCESS') setTimeout(() => { approval.value = { status: 'IDLE', progress: 0 } }, 5000)
   })
 })
-onBeforeUnmount(() => { events?.close(); approvalEvents?.close() })
+onBeforeUnmount(() => { clearTimeout(hideProcessingTimer); events?.close(); approvalEvents?.close() })
 </script>
 
 <template>
@@ -201,14 +217,19 @@ onBeforeUnmount(() => { events?.close(); approvalEvents?.close() })
           </div>
         </div>
 
-        <div v-if="state.googleWaitMessage || state.filesLoaded === false || state.files.some(file => file.status === 'PROCESSING')" class="message wait-message" role="status">
-          <m3e-circular-progress-indicator indeterminate />{{ state.googleWaitMessage || 'Проверяем таблицы Google Sheets. Пожалуйста, подождите — список обновится автоматически.' }}
+        <div v-if="showProcessing" class="message wait-message" role="status">
+          <span>Обработка файлов. Подождите</span>
+          <template v-if="validationProgress.total > 0">
+            <m3e-linear-progress-indicator :value="validationPercent" aria-label="Проверка файлов" />
+            <small>Обработано {{ validationProgress.completed }} из {{ validationProgress.total }} · {{ validationPercent }}%</small>
+          </template>
+          <m3e-linear-progress-indicator v-else mode="query" aria-label="Обработка файлов" />
         </div>
         <div v-if="error" class="message error-message"><m3e-icon name="error" />{{ error }}</div>
         <div class="table-heading schedule-grid"><span /><b>Имя файла</b><b>Дата изменения</b><b>Дата создания</b><span /></div>
         <m3e-divider />
         <div v-if="loading" class="empty-state"><m3e-circular-progress-indicator indeterminate /></div>
-        <VirtualList v-else-if="files.length" :items="files" :item-height="76" class="page-virtual-list">
+        <VirtualList v-else-if="files.length" :items="files" :item-height="48" class="page-virtual-list">
           <template #default="{ item: file }">
             <m3e-list-action class="virtual-action" @click="openFile(file)">
               <div class="schedule-grid">

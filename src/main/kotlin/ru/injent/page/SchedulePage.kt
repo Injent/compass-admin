@@ -58,6 +58,7 @@ fun Routing.schedulePage(
                 filter = call.scheduleFilter,
                 filesLoaded = googleService.filesLoaded.value,
                 googleWaitMessage = googleService.googleWaitMessage.value,
+                validationProgress = googleService.processingProgress,
             )
         )
     }
@@ -79,6 +80,7 @@ fun Routing.schedulePage(
                 filter = call.scheduleFilter,
                 filesLoaded = googleService.filesLoaded.value,
                 googleWaitMessage = googleService.googleWaitMessage.value,
+                validationProgress = googleService.processingProgress,
             )
         )
     }
@@ -100,6 +102,7 @@ fun Routing.schedulePage(
                 filter = call.scheduleFilter,
                 filesLoaded = googleService.filesLoaded.value,
                 googleWaitMessage = googleService.googleWaitMessage.value,
+                validationProgress = googleService.processingProgress,
             )
         )
     }
@@ -120,6 +123,7 @@ fun Routing.schedulePage(
                 filter = call.scheduleFilter,
                 filesLoaded = googleService.filesLoaded.value,
                 googleWaitMessage = googleService.googleWaitMessage.value,
+                validationProgress = googleService.processingProgress,
             )
         )
     }
@@ -130,7 +134,7 @@ fun Routing.schedulePage(
             .collectLatest { files ->
                 send(
                     data = Json.encodeToString(
-                        scheduleView(files, filter = call.scheduleFilter, filesLoaded = googleService.filesLoaded.value, googleWaitMessage = googleService.googleWaitMessage.value)
+                        scheduleView(files, filter = call.scheduleFilter, filesLoaded = googleService.filesLoaded.value, googleWaitMessage = googleService.googleWaitMessage.value, validationProgress = googleService.processingProgress)
                     ),
                     event = "schedule"
                 )
