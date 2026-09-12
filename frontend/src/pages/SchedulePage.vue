@@ -16,17 +16,29 @@ const uploading = ref(false)
 const error = ref('')
 const deleteMode = ref(false)
 const selected = ref(new Set())
+const activeFileId = ref(null)
 const fileInput = ref()
 const approvalDialog = ref()
 const downloadDialog = ref()
 const approval = ref({ status: 'IDLE', progress: 0, message: '' })
+const approvalPercent = computed(() => {
+  const progress = Number(approval.value.progress ?? 0)
+  return Number.isFinite(progress) ? Math.min(100, Math.max(0, progress)) : 0
+})
 const preview = ref({ groupsToRemove: [], duplicateGroups: [] })
 let events
 let approvalEvents
 const showProcessing = ref(false)
 let hideProcessingTimer
-const validationProgress = computed(() => state.value.validationProgress || { total: 0, completed: 0 })
-const validationPercent = computed(() => validationProgress.value.total
+const validationProgress = computed(() => {
+  const total = Number(state.value.validationProgress?.total ?? 0)
+  const completed = Number(state.value.validationProgress?.completed ?? 0)
+  if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(completed) || completed < 0) {
+    return { total: 0, completed: 0 }
+  }
+  return { total: Math.trunc(total), completed: Math.min(Math.trunc(completed), Math.trunc(total)) }
+})
+const validationPercent = computed(() => validationProgress.value.total > 0
   ? Math.round(validationProgress.value.completed * 100 / validationProgress.value.total)
   : 0)
 const processing = computed(() => Boolean(
@@ -119,6 +131,7 @@ async function restore(fileId) {
   }
 }
 function openFile(file) {
+  activeFileId.value = file.fileId
   if (deleteMode.value) toggle(file.fileId)
   else if (file.status !== 'EMPTY') window.open(`/schedule/editor/${encodeURIComponent(file.fileId)}`, '_blank', 'noopener')
 }
@@ -186,7 +199,7 @@ onBeforeUnmount(() => { clearTimeout(hideProcessingTimer); events?.close(); appr
           <m3e-icon slot="icon" name="close" variant="rounded" />Отмена
         </m3e-button>
         <m3e-button v-else :disabled="busy" @click="fileInput.click()">
-          <m3e-circular-progress-indicator v-if="uploading" slot="icon" indeterminate />
+          <m3e-circular-progress-indicator v-if="uploading" class="upload-loader" slot="icon" indeterminate />
           <m3e-icon v-else slot="icon" name="upload" />Загрузить новый файл
         </m3e-button>
         <m3e-button @click="downloadAll"><m3e-icon slot="icon" name="download" />Скачать все</m3e-button>
@@ -204,10 +217,10 @@ onBeforeUnmount(() => { clearTimeout(hideProcessingTimer); events?.close(); appr
     <m3e-content-pane class="schedule-pane">
       <div class="list-page-content">
         <div class="schedule-filter-row">
-          <m3e-filter-chip-set aria-label="Фильтр по статусу">
+          <m3e-filter-chip-set aria-label="Фильтр по статусу" @change="$event.currentTarget.value && chooseFilter($event.currentTarget.value)">
             <m3e-filter-chip
-              v-for="([value, label]) in filters" :key="value" :selected="filter === value"
-              @click="chooseFilter(value)"
+              v-for="([value, label]) in filters" :key="value" :value="value" :selected="filter === value"
+              @beforeinput.prevent @click="chooseFilter(value)"
             >{{ label }}</m3e-filter-chip>
           </m3e-filter-chip-set>
           <div class="approve-wrapper" :title="state.canOpenScheduleApproval ? '' : 'Есть непроверенные или обрабатывающиеся файлы'">
@@ -231,7 +244,7 @@ onBeforeUnmount(() => { clearTimeout(hideProcessingTimer); events?.close(); appr
         <div v-if="loading" class="empty-state"><m3e-circular-progress-indicator indeterminate /></div>
         <VirtualList v-else-if="files.length" :items="files" :item-height="48" class="page-virtual-list">
           <template #default="{ item: file }">
-            <m3e-list-action class="virtual-action" @click="openFile(file)">
+            <m3e-list-action class="virtual-action" :selected="activeFileId === file.fileId" :aria-current="activeFileId === file.fileId ? 'true' : null" @click="openFile(file)">
               <div class="schedule-grid">
                 <m3e-shape :name="statusShape(file.status)" :class="{ 'processing-shape': file.status === 'PROCESSING' }" :title="file.statusText" :style="{ '--m3e-shape-container-color': statusColor(file.status), '--m3e-shape-size': '30px' }">
                   <div class="status-icon"><m3e-icon :name="statusIcon(file.status)" variant="rounded" /></div>
@@ -262,8 +275,8 @@ onBeforeUnmount(() => { clearTimeout(hideProcessingTimer); events?.close(); appr
     <dialog ref="approvalDialog" class="app-dialog">
       <h2>Подтвердить расписание?</h2>
       <template v-if="approval.status === 'RUNNING'">
-        <m3e-linear-progress-indicator variant="wavy" :value="approval.progress" />
-        <p>Файлы отправляются: {{ approval.progress }}%. Страницу можно закрыть.</p>
+        <m3e-linear-progress-indicator variant="wavy" :value="approvalPercent" />
+        <p>Файлы отправляются: {{ approvalPercent }}%. Страницу можно закрыть.</p>
       </template>
       <template v-else>
         <p>На сервер будут отправлены только новые и изменённые файлы. Удалённые группы будут убраны из расписания.</p>

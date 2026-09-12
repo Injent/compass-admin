@@ -4,6 +4,7 @@ import com.google.api.services.sheets.v4.model.CellData
 import com.google.api.services.sheets.v4.model.GridRange
 import com.google.api.services.sheets.v4.model.Sheet
 import ru.injent.service.scheduleGroupNamesFromHeaders
+import ru.injent.service.combineGroupName
 
 fun interface SheetValidator {
     fun SheetValidatorScope.validate()
@@ -180,6 +181,8 @@ data class Cell(
     val isBoldText: Boolean
         get() = cellRef?.userEnteredFormat?.textFormat?.bold ?: false
 
+    val note: String? get() = cellRef?.note
+
     val hasBackground: Boolean
         get() = cellRef?.userEnteredFormat?.backgroundColor != null
 
@@ -250,3 +253,24 @@ private val WEEKDAY_NAMES = setOf(
     "суббота",
     "воскресенье",
 )
+
+internal data class GroupHeaderCell(
+    val name: String,
+    val sheetId: Int,
+    val row: Int,
+    val column: Int,
+    val note: String?,
+)
+
+internal fun SheetValidatorScope.groupHeaderCells(sheetId: Int): List<GroupHeaderCell> =
+    rows.getOrNull(headerRowIdx ?: -1).orEmpty()
+        .filter { it.colIdx >= 3 && !it.value.isNullOrBlank() }
+        .flatMap { header ->
+            val subheaders = rows.getOrNull(subheaderRowIdx ?: -1).orEmpty()
+                .filter { it.colIdx in header.colIdx..header.endColIdx && !it.value.isNullOrBlank() }
+            if (subheaders.isEmpty()) {
+                listOf(GroupHeaderCell(header.value.orEmpty(), sheetId, header.rowIdx, header.colIdx, header.note))
+            } else subheaders.map { cell ->
+                GroupHeaderCell(combineGroupName(header.value.orEmpty(), cell.value.orEmpty()), sheetId, cell.rowIdx, cell.colIdx, cell.note)
+            }
+        }

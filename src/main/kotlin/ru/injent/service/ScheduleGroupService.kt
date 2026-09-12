@@ -171,7 +171,7 @@ fun String.normalizedGroupName(): String =
         .replace(WHITESPACE_REGEX, " ")
         .replace(PARENTHESES_SPACES_REGEX, "\$1")
 
-private fun combineGroupName(headerName: String, subheaderName: String): String {
+internal fun combineGroupName(headerName: String, subheaderName: String): String {
     val normalizedHeader = headerName.normalizedGroupName()
     val normalizedSubheader = subheaderName.normalizedGroupName()
 

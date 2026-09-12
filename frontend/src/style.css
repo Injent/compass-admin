@@ -44,7 +44,7 @@ button, input { font: inherit; }
 .snackbar.success { background: #216e39; }
 .snackbar.error { background: var(--md-sys-color-error); }
 .config-content { overflow: auto; }
-.config-form { width: min(720px, 100%); margin: 0 auto; padding: 8px 0 32px; }
+.config-form { width: min(1080px, 100%); margin: 0 auto; padding: 8px 0 32px; }
 .config-form > m3e-heading { margin-top: 12px; }
 .support-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 16px; }
 
@@ -74,3 +74,7 @@ m3e-shape[name="circle"] .status-icon m3e-icon { font-size: 18px; }
 .file-name-content { display: flex; flex-direction: column; min-width: 0; flex: 1; overflow: hidden; }
 .file-name-content strong { overflow: hidden; text-overflow: ellipsis; }
 .file-change-dot { width: 8px; height: 8px; border-radius: 50%; background: #1a73e8; flex: 0 0 8px; margin-inline-start: auto; }
+
+.upload-loader { --m3e-circular-flat-progress-indicator-diameter: 20px; }
+.config-form m3e-form-field { width: 100%; min-width: 0; }
+.virtual-action[selected] { --m3e-list-item-container-color: var(--md-sys-color-secondary-container); }

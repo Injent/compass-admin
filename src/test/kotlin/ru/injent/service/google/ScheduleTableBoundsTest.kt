@@ -115,7 +115,7 @@ class ScheduleTableBoundsTest {
         with(LessonValidator()) { scope.validate() }
 
         assertEquals(
-            listOf("В круглых скобках должен быть указан только преподаватель"),
+            listOf("В круглых скобках должен быть указан только преподаватель. Используйте тире чтобы указать дополнительную информацию"),
             scope.getAccumulatedErrors().map(CellError::comment),
         )
     }

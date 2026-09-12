@@ -39,12 +39,14 @@ import kotlinx.serialization.json.Json
 import ru.injent.dto.FileStatus
 import ru.injent.dto.SheetsFile
 import ru.injent.service.ScheduleGroup
+import ru.injent.service.normalizedGroupName
 import ru.injent.service.ScheduleChangeTracker
 import ru.injent.service.ScheduleGroupService
 import ru.injent.service.validator.LegendValidator
 import ru.injent.service.validator.LessonValidator
 import ru.injent.service.validator.TeacherValidator
 import ru.injent.service.wordcorrection.WordCorrectionService
+import java.util.concurrent.ConcurrentHashMap
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.zip.ZipEntry
@@ -78,6 +80,7 @@ class NewGoogleService(
     val processingProgress: FileValidationProgress
         get() = readingProgressState.value ?: validationProgressState.value
     private val groupConflictsMutex = Mutex()
+    private val groupHeadersByFile = ConcurrentHashMap<String, List<GroupHeaderCell>>()
     // ponytail: one workspace-wide lock; split only if real concurrent administration is required.
     private val scheduleOperationMutex = Mutex()
     private val scheduleGroupVersion = MutableStateFlow(0)
@@ -345,6 +348,18 @@ class NewGoogleService(
                         }
                     }
                     listOf(updateStatusDeferred, updateSheetsDeferred).awaitAll()
+                    val errorsByCell = scope.getAccumulatedErrors().associateBy { it.rowIdx to it.colIdx }
+                    val clearedCells = scope.getFixedErrors().map { it.rowIdx to it.colIdx }.toSet()
+                    groupHeadersByFile.computeIfPresent(fileId) { _, headers ->
+                        headers.map { header ->
+                            val position = header.row to header.column
+                            when {
+                                position in errorsByCell -> header.copy(note = errorsByCell.getValue(position).comment)
+                                position in clearedCells -> header.copy(note = null)
+                                else -> header
+                            }
+                        }
+                    }
                     scheduleGroupService.syncGroups(fileId, groupNames)
                     notifyScheduleGroupUpdate()
                     refreshGroupConflicts()
@@ -470,6 +485,8 @@ class NewGoogleService(
                 .setIncludeGridData(true)
                 .execute()
                 .also { spreadsheet ->
+                    val sheet = spreadsheet.sheets.first()
+                    groupHeadersByFile[fileId] = SheetValidatorScope(sheet).groupHeaderCells(sheet.properties.sheetId)
                     val file = files.value.firstOrNull { it.fileId == fileId }
                     if (file != null) {
                         val fingerprint = spreadsheet.scheduleFingerprint(file.name)
@@ -647,6 +664,33 @@ class NewGoogleService(
 
         if (changed) {
             files.value = newFiles
+        }
+        for (file in activeFiles) {
+            val headers = groupHeadersByFile[file.fileId] ?: continue
+            val updatedHeaders = headers.map { header ->
+                val otherNames = activeFiles.filter { other ->
+                    other.fileId != file.fileId && groupsByFile[other.fileId].orEmpty().any {
+                        it.normalizedName == header.name.normalizedGroupName()
+                    }
+                }.map { it.name }.distinct().sorted()
+                val note = if (otherNames.isNotEmpty()) {
+                    "Такая группа уже есть в файле ${otherNames.joinToString(", ")}"
+                } else header.note?.takeUnless { it.startsWith(GROUP_CONFLICT_NOTE_PREFIX) }
+                header.copy(note = note)
+            }
+            val requests = headers.zip(updatedHeaders).mapNotNull { (before, after) ->
+                if (before.note == after.note) null
+                else if (after.note != null) InvalidCellRequest(after.sheetId, after.column, after.row, after.note)
+                else ValidCellRequest(after.sheetId, after.column, after.row)
+            }
+            if (requests.isNotEmpty()) {
+                runResulting("mark duplicate groups '${file.fileId}'") {
+                    sheetsRequests.execute {
+                        sheets.spreadsheets().batchUpdate(file.fileId, BatchUpdateSpreadsheetRequest().setRequests(requests)).execute()
+                    }
+                }.getOrThrow()
+                groupHeadersByFile[file.fileId] = updatedHeaders
+            }
         }
     }
 
@@ -909,3 +953,5 @@ private val ErrorBackgroundColor: Color = Color()
 
 @Serializable
 data class FileValidationProgress(val total: Int = 0, val completed: Int = 0)
+
+private const val GROUP_CONFLICT_NOTE_PREFIX = "Такая группа уже есть в файле "
