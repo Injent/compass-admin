@@ -94,6 +94,6 @@ m3e-shape[name="circle"] .status-icon m3e-icon { font-size: 18px; }
 .guide-markdown table { display: block; overflow: auto; border-collapse: collapse; }
 .guide-markdown th, .guide-markdown td { border: 1px solid var(--md-sys-color-outline-variant); padding: 8px 12px; }
 
-.guide-page m3e-expansion-panel { --m3e-expansion-panel-content-padding: 0px; }
+.guide-page m3e-expansion-panel { --m3e-expansion-panel-content-padding: 0 20px 16px; }
 .guide-markdown > :first-child { margin-top: 0; }
 .guide-markdown > :last-child { margin-bottom: 0; }
