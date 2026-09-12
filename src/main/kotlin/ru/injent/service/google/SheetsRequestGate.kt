@@ -42,7 +42,7 @@ internal class SheetsRequestGate(
                 nextRequestAt = nowMillis() + 1_200
                 val requestStartedAt = nowMillis()
                 val window = queryWindow.value
-                if (window.firstQueryAt != null && requestStartedAt - window.firstQueryAt >= 60_000) {
+                if ((window.firstQueryAt != null) && ((requestStartedAt - window.firstQueryAt) >= 60_000)) {
                     queryWindow.value = QueryWindow()
                 }
                 try {

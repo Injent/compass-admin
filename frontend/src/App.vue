@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import SchedulePage from './pages/SchedulePage.vue'
 import TeachersPage from './pages/TeachersPage.vue'
 import ConfigPage from './pages/ConfigPage.vue'
+import GuidePage from './pages/GuidePage.vue'
 
 const route = ref(location.pathname)
 const canAccessConfig = Boolean(window.__APP_CONFIG__?.canAccessConfig)
@@ -27,7 +28,7 @@ function onPopState() { route.value = location.pathname }
 onMounted(() => {
   if (location.pathname === '/') navigate('/schedule')
   addEventListener('popstate', onPopState)
-  if (canAccessConfig) {
+  if (canAccessConfig && route.value !== '/guide') {
     quotaEvents = new EventSource('/api/google-sheets/quota/events')
     quotaEvents.addEventListener('quota', event => {
       clearTimeout(quotaResetTimer)
@@ -50,7 +51,8 @@ onBeforeUnmount(() => {
 
 <template>
 
-    <div class="app-layout">
+    <GuidePage v-if="route === '/guide'" />
+    <div v-else class="app-layout">
       <div class="nav-column">
         <m3e-nav-rail id="nav-rail">
           <m3e-icon-button toggle aria-label="Развернуть навигацию">
@@ -75,7 +77,7 @@ onBeforeUnmount(() => {
           <m3e-circular-progress-indicator
             :value="sheetsQuota?.remainingPercent ?? 0" :indeterminate="!sheetsQuota"
             :aria-label="quotaTitle"
-          >{{ sheetsQuota ? `${sheetsQuota.remainingPercent}%` : '' }}</m3e-circular-progress-indicator>
+          >{{ sheetsQuota ? `${sheetsQuota.remainingPercent}` : '' }}</m3e-circular-progress-indicator>
         </div>
         <form class="logout-form" method="post" action="/auth/logout">
           <m3e-icon-button type="submit" aria-label="Выход"><m3e-icon name="logout" /></m3e-icon-button>

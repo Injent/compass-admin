@@ -195,6 +195,9 @@ onBeforeUnmount(() => { clearTimeout(hideProcessingTimer); events?.close(); appr
         <input v-model="search" slot="input" placeholder="Поиск файлов..." />
       </m3e-search-bar>
       <div class="actions-wrapper">
+        <m3e-button href="/guide" target="_blank" rel="noopener noreferrer">
+          <m3e-icon slot="icon" name="help" />Помощь
+        </m3e-button>
         <m3e-button v-if="deleteMode" @click="deleteMode = false; selected = new Set()">
           <m3e-icon slot="icon" name="close" variant="rounded" />Отмена
         </m3e-button>

@@ -106,3 +106,9 @@ Then run:
 docker compose pull
 docker compose up -d
 ```
+
+## Guide
+
+`/guide` opens from the schedule's Help button in a new tab. Each UTF-8 file in `static/guide` named `1. Question.md`, `2. Another question.md`, etc. becomes an accordion panel. Numeric prefixes determine sorting and are hidden in titles. Files without this naming format are ignored. The first panel starts open; multiple panels may remain open.
+
+Markdown supports headings, emphasis, lists, links, tables, code and images (`![Description](https://example.com/image.png)`). Raw HTML is displayed as text. Edits appear after reloading the guide, without rebuilding or restarting the server. The guide files are part of the project and are packaged into the Docker image with the rest of `static`. To publish guide changes in Docker, rebuild and deploy the image; no separate data volume is required.

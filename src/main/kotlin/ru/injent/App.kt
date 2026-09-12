@@ -143,6 +143,7 @@ fun Application.configureApp() {
         staticAssets()
         authPage(authService)
         indexPage()
+        guidePage()
         schedulePage(googleService, wordCorrectionService, sheetValidators, appConfig, httpClient, this@configureApp, log)
         teachersPage(teacherService)
         configPage(remoteConfigService)

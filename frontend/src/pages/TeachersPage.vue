@@ -128,7 +128,7 @@ onMounted(load)
         <m3e-form-field variant="outlined"><label slot="label" for="last-name">Фамилия</label><input id="last-name" v-model="draft.lastName" required /></m3e-form-field>
         <m3e-form-field variant="outlined"><label slot="label" for="first-name">Имя</label><input id="first-name" v-model="draft.firstName" required /></m3e-form-field>
         <m3e-form-field variant="outlined"><label slot="label" for="middle-name">Отчество</label><input id="middle-name" v-model="draft.middleName" /></m3e-form-field>
-        <m3e-form-field variant="outlined"><label slot="label" for="departments">Подразделения</label><input id="departments" v-model="draft.departments" /></m3e-form-field>
+        <m3e-form-field v-if="draft.id != null" variant="outlined"><label slot="label" for="departments">Подразделения</label><input id="departments" v-model="draft.departments" /></m3e-form-field>
         <div class="dialog-actions">
           <m3e-button v-if="draft.id != null" type="button" variant="outlined" :disabled="busy" @click="removeOne">Удалить</m3e-button>
           <span class="dialog-spacer" />
