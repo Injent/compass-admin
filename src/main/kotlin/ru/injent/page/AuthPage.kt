@@ -89,7 +89,7 @@ fun Application.installAuthGuard(authService: AuthService, googleCallbackApiKey:
             return@intercept
         }
 
-        if (path.startsWith("/config") && user.role != Access.Role.SUPERUSER) {
+        if ((path.startsWith("/config") || path == "/api/google-sheets/quota/events") && user.role != Access.Role.SUPERUSER) {
             call.respond(HttpStatusCode.Forbidden)
             finish()
         }

@@ -51,6 +51,12 @@ fun Routing.schedulePage(
 ) {
     val approvalState = MutableStateFlow(ScheduleApprovalState.idle())
 
+    sse("/api/google-sheets/quota/events") {
+        googleService.sheetsQuotaUpdates.collect { quota ->
+            send(data = Json.encodeToString(quota), event = "quota")
+        }
+    }
+
     get("/api/schedule") {
         call.respond(
             scheduleView(

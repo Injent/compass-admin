@@ -244,7 +244,7 @@ onBeforeUnmount(() => { clearTimeout(hideProcessingTimer); events?.close(); appr
         <div v-if="loading" class="empty-state"><m3e-circular-progress-indicator indeterminate /></div>
         <VirtualList v-else-if="files.length" :items="files" :item-height="48" class="page-virtual-list">
           <template #default="{ item: file }">
-            <m3e-list-action class="virtual-action" :selected="activeFileId === file.fileId" :aria-current="activeFileId === file.fileId ? 'true' : null" @click="openFile(file)">
+            <m3e-list-action class="virtual-action" :selected.attr="activeFileId === file.fileId ? '' : null" :aria-current="activeFileId === file.fileId ? 'true' : null" @click="openFile(file)">
               <div class="schedule-grid">
                 <m3e-shape :name="statusShape(file.status)" :class="{ 'processing-shape': file.status === 'PROCESSING' }" :title="file.statusText" :style="{ '--m3e-shape-container-color': statusColor(file.status), '--m3e-shape-size': '30px' }">
                   <div class="status-icon"><m3e-icon :name="statusIcon(file.status)" variant="rounded" /></div>

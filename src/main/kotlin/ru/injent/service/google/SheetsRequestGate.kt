@@ -2,6 +2,9 @@ package ru.injent.service.google
 
 import com.google.api.client.googleapis.json.GoogleJsonResponseException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.serialization.Serializable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
@@ -16,6 +19,14 @@ internal class SheetsRequestGate(
 ) {
     private val mutex = Mutex()
     private var nextRequestAt = 0L
+    private data class QueryWindow(val firstQueryAt: Long? = null, val used: Int = 0)
+    private val queryWindow = MutableStateFlow(QueryWindow())
+    val quotaUpdates: Flow<SheetsQuota> get() = queryWindow.map { window ->
+        val resetAfter = window.firstQueryAt?.let { (60_000 - (nowMillis() - it)).coerceAtLeast(0) } ?: 0
+        val used = if (resetAfter == 0L) 0 else window.used
+        SheetsQuota(((60 - used).coerceAtLeast(0) * 100 / 60.0).toInt(), used, resetAfter)
+    }
+
     private val waiting = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = waiting
 
@@ -29,8 +40,16 @@ internal class SheetsRequestGate(
                 }
                 // At most 50 requests/minute, leaving headroom below the 60/minute quota.
                 nextRequestAt = nowMillis() + 1_200
+                val requestStartedAt = nowMillis()
+                val window = queryWindow.value
+                if (window.firstQueryAt != null && requestStartedAt - window.firstQueryAt >= 60_000) {
+                    queryWindow.value = QueryWindow()
+                }
                 try {
-                    return@withLock request()
+                    val result = request()
+                    val current = queryWindow.value
+                    queryWindow.value = QueryWindow(current.firstQueryAt ?: requestStartedAt, current.used + 1)
+                    return@withLock result
                 } catch (error: GoogleJsonResponseException) {
                     val quota = error.statusCode == 429 || (error.statusCode == 403 &&
                         error.details?.errors.orEmpty().any {
@@ -51,3 +70,6 @@ internal class SheetsRequestGate(
         }
     }
 }
+
+@Serializable
+data class SheetsQuota(val remainingPercent: Int, val usedRequests: Int, val resetAfterMillis: Long)

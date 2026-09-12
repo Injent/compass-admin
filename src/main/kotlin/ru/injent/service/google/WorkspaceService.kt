@@ -68,6 +68,7 @@ class NewGoogleService(
 ) {
 
     private val sheetsRequests = SheetsRequestGate()
+    val sheetsQuotaUpdates: Flow<SheetsQuota> get() = sheetsRequests.quotaUpdates
     val googleWaitMessage: StateFlow<String?> get() = sheetsRequests.message
 
     private val fileMutexes = mutableMapOf<String, Mutex>()

@@ -8,6 +8,9 @@ import org.koin.dsl.module
 import ru.injent.service.ScheduleChangeTracker
 import ru.injent.service.ScheduleFileApprovals
 import ru.injent.service.ScheduleGroupService
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 val databaseModule = module {
     single {

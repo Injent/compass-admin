@@ -6,6 +6,12 @@ import ConfigPage from './pages/ConfigPage.vue'
 
 const route = ref(location.pathname)
 const canAccessConfig = Boolean(window.__APP_CONFIG__?.canAccessConfig)
+const sheetsQuota = ref(null)
+let quotaEvents
+let quotaResetTimer
+const quotaTitle = computed(() => sheetsQuota.value
+  ? `Google Sheets: осталось ${sheetsQuota.value.remainingPercent}% · использовано ${sheetsQuota.value.usedRequests} из 60 запросов`
+  : 'Загрузка лимита Google Sheets')
 const routes = [
   { path: '/schedule', label: 'Расписание', icon: 'calendar_today', component: SchedulePage },
   { path: '/teachers', label: 'Преподаватели', icon: 'co_present', component: TeachersPage },
@@ -21,8 +27,25 @@ function onPopState() { route.value = location.pathname }
 onMounted(() => {
   if (location.pathname === '/') navigate('/schedule')
   addEventListener('popstate', onPopState)
+  if (canAccessConfig) {
+    quotaEvents = new EventSource('/api/google-sheets/quota/events')
+    quotaEvents.addEventListener('quota', event => {
+      clearTimeout(quotaResetTimer)
+      sheetsQuota.value = JSON.parse(event.data)
+      const resetAfter = sheetsQuota.value.resetAfterMillis
+      if (resetAfter > 0) {
+        quotaResetTimer = setTimeout(() => {
+          sheetsQuota.value = { remainingPercent: 100, usedRequests: 0, resetAfterMillis: 0 }
+        }, resetAfter)
+      }
+    })
+  }
 })
-onBeforeUnmount(() => removeEventListener('popstate', onPopState))
+onBeforeUnmount(() => {
+  removeEventListener('popstate', onPopState)
+  quotaEvents?.close()
+  clearTimeout(quotaResetTimer)
+})
 </script>
 
 <template>
@@ -48,6 +71,12 @@ onBeforeUnmount(() => removeEventListener('popstate', onPopState))
           </m3e-nav-item>
         </m3e-nav-rail>
         <div class="nav-column-spacer" />
+        <div v-if="canAccessConfig" class="sheets-quota" :title="quotaTitle">
+          <m3e-circular-progress-indicator
+            :value="sheetsQuota?.remainingPercent ?? 0" :indeterminate="!sheetsQuota"
+            :aria-label="quotaTitle"
+          >{{ sheetsQuota ? `${sheetsQuota.remainingPercent}%` : '' }}</m3e-circular-progress-indicator>
+        </div>
         <form class="logout-form" method="post" action="/auth/logout">
           <m3e-icon-button type="submit" aria-label="Выход"><m3e-icon name="logout" /></m3e-icon-button>
         </form>
