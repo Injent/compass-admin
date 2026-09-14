@@ -6,12 +6,11 @@ import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
 import ru.injent.service.ScheduleChangeTracker
-import ru.injent.service.ScheduleFileApprovals
 import ru.injent.service.ScheduleGroupService
-import kotlin.time.Clock
-import kotlin.time.Duration.Companion.seconds
-import kotlin.time.Instant
 
+/**
+ * Koin-модуль базы данных и инициализации Exposed.
+ */
 val databaseModule = module {
     single {
         val databasePath = System.getenv("COMPASS_DB_PATH") ?: "compassadmin.db"
@@ -25,6 +24,6 @@ val databaseModule = module {
 
 private fun initializeDatabase(database: Database) {
     transaction(database) {
-        SchemaUtils.create(Teachers, ScheduleGroups, ScheduleFileApprovals)
+        SchemaUtils.create(TeachersTable, ScheduleGroupsTable, ScheduleFileApprovalsTable)
     }
 }

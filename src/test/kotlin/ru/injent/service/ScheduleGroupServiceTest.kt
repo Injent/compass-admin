@@ -3,7 +3,8 @@ package ru.injent.service
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.SchemaUtils
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
-import ru.injent.database.ScheduleGroups
+import ru.injent.database.ScheduleGroupsTable
+import ru.injent.domain.ScheduleGroup
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -14,7 +15,7 @@ class ScheduleGroupServiceTest {
         val databaseFile = Files.createTempFile("schedule-groups-", ".db")
         try {
             val database = Database.connect("jdbc:sqlite:$databaseFile", driver = "org.sqlite.JDBC")
-            transaction(database) { SchemaUtils.create(ScheduleGroups) }
+            transaction(database) { SchemaUtils.create(ScheduleGroupsTable) }
             val service = ScheduleGroupService(database)
 
             service.syncGroups("missing-file", listOf("ПРИ-101"))

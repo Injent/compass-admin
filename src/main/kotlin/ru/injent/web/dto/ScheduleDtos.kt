@@ -1,16 +1,16 @@
-package ru.injent.page
+package ru.injent.web.dto
 
-import freemarker.template.Configuration
-import io.ktor.server.routing.*
-import kotlinx.datetime.*
 import kotlinx.serialization.Serializable
-import org.koin.ktor.ext.get
-import ru.injent.dto.FileStatus
-import ru.injent.dto.SheetsFile
-import ru.injent.service.google.FileValidationProgress
-import java.io.StringWriter
-import kotlin.time.Clock
-import kotlin.time.Instant
+import ru.injent.domain.FileStatus
+import ru.injent.domain.SheetsFile
+import ru.injent.service.google.model.FileValidationProgress
+import ru.injent.util.formatScheduleDate
+import ru.injent.util.withoutSpreadsheetExtension
+
+const val FILTER_ALL = "all"
+const val FILTER_VALID = "valid"
+const val FILTER_INVALID = "invalid"
+const val FILTER_DELETED = "deleted"
 
 @Serializable
 data class FileView(
@@ -67,13 +67,6 @@ fun scheduleView(
 fun fileModel(file: SheetsFile): Map<String, Any> =
     mapOf("file" to file.toView())
 
-context(routing: Routing)
-fun renderTemplate(templateName: String, model: Map<String, Any?>): String {
-    val writer = StringWriter()
-    routing.get<Configuration>().getTemplate(templateName).process(model, writer)
-    return writer.toString()
-}
-
 private fun SheetsFile.toView(): FileView =
     FileView(
         fileId = fileId,
@@ -90,9 +83,6 @@ private fun SheetsFile.toView(): FileView =
             ?.let { groups -> "расписание с группами: ${groups.joinToString(", ")} уже существует" },
     )
 
-private fun String.withoutSpreadsheetExtension(): String =
-    replace(Regex("\\.(xlsx|xls)$", RegexOption.IGNORE_CASE), "")
-
 private fun List<SheetsFile>.filterByScheduleFilter(filter: String): List<SheetsFile> =
     when (filter.normalizeScheduleFilter()) {
         FILTER_VALID -> filter { file -> file.displayStatus() == FileStatus.VALID }
@@ -104,18 +94,13 @@ private fun List<SheetsFile>.filterByScheduleFilter(filter: String): List<Sheets
 private fun SheetsFile.displayStatus(): FileStatus =
     if (status != FileStatus.EMPTY && conflictGroups.isNotEmpty()) FileStatus.INVALID else status
 
-private fun String.normalizeScheduleFilter(): String =
+fun String.normalizeScheduleFilter(): String =
     when (lowercase()) {
         FILTER_VALID -> FILTER_VALID
         FILTER_INVALID -> FILTER_INVALID
         FILTER_DELETED -> FILTER_DELETED
         else -> FILTER_ALL
     }
-
-private const val FILTER_ALL = "all"
-private const val FILTER_VALID = "valid"
-private const val FILTER_INVALID = "invalid"
-private const val FILTER_DELETED = "deleted"
 
 private fun FileStatus.toText(): String =
     when (this) {
@@ -133,37 +118,43 @@ private fun FileStatus.toIcon(): String =
         FileStatus.INVALID -> "priority_high"
     }
 
-private fun Instant.formatScheduleDate(): String {
-    val timeZone = TimeZone.currentSystemDefault()
-    val now = Clock.System.now().toLocalDateTime(timeZone)
-    val localDateTime = toLocalDateTime(timeZone)
-    val date = localDateTime.date
-    val time = "${localDateTime.hour.twoDigits()}:${localDateTime.minute.twoDigits()}"
+@Serializable
+data class DeleteScheduleRequest(val ids: List<String>)
 
-    return when {
-        date == now.date -> time
-        date == now.date.minus(1, DateTimeUnit.DAY) -> "вчера, $time"
-        date.year == now.year -> "${date.day} ${date.month.number.monthAbbr()} $time"
-        else -> "${date.day} ${date.month.number.monthAbbr()} ${date.year} г."
+@Serializable
+data class ScheduleApprovalPreview(
+    val groupsToRemove: List<String>,
+    val duplicateGroups: List<String>,
+)
+
+@Serializable
+data class ScheduleApprovalState(
+    val status: ScheduleApprovalStatus,
+    val progress: Int,
+    val message: String? = null,
+) {
+    companion object {
+        fun idle(): ScheduleApprovalState =
+            ScheduleApprovalState(ScheduleApprovalStatus.IDLE, 0)
+
+        fun running(progress: Int): ScheduleApprovalState =
+            ScheduleApprovalState(ScheduleApprovalStatus.RUNNING, progress, "Файлы отправляются")
     }
 }
 
-private fun Int.twoDigits(): String =
-    toString().padStart(2, '0')
+@Serializable
+enum class ScheduleApprovalStatus {
+    IDLE,
+    RUNNING,
+    SUCCESS,
+    ERROR,
+}
 
-private fun Int.monthAbbr(): String =
-    when (this) {
-        1 -> "янв."
-        2 -> "фев."
-        3 -> "мар."
-        4 -> "апр."
-        5 -> "мая"
-        6 -> "июн."
-        7 -> "июл."
-        8 -> "авг."
-        9 -> "сент."
-        10 -> "окт."
-        11 -> "нояб."
-        12 -> "дек."
-        else -> ""
-    }
+data class UploadResult(
+    val error: String? = null
+)
+
+data class CompassApiResponse(
+    val status: io.ktor.http.HttpStatusCode,
+    val body: String,
+)

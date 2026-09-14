@@ -2,25 +2,32 @@ package ru.injent.service.teacher
 
 import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.eq
-import org.jetbrains.exposed.v1.jdbc.*
+import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.jdbc.deleteWhere
+import org.jetbrains.exposed.v1.jdbc.insertAndGetId
+import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
-import ru.injent.database.Teacher
-import ru.injent.database.Teachers
+import org.jetbrains.exposed.v1.jdbc.update
+import ru.injent.database.TeachersTable
+import ru.injent.domain.Teacher
 
+/**
+ * Сервис управления записями преподавателей в базе данных.
+ */
 class TeacherService(
     private val database: Database,
 ) {
     fun getAll(): List<Teacher> = transaction(database) {
-        Teachers
+        TeachersTable
             .selectAll()
-            .orderBy(Teachers.lastName to SortOrder.ASC, Teachers.firstName to SortOrder.ASC)
+            .orderBy(TeachersTable.lastName to SortOrder.ASC, TeachersTable.firstName to SortOrder.ASC)
             .map { row ->
                 Teacher(
-                    id = row[Teachers.id].value,
-                    lastName = row[Teachers.lastName],
-                    firstName = row[Teachers.firstName],
-                    middleName = row[Teachers.middleName],
-                    departments = row[Teachers.departments],
+                    id = row[TeachersTable.id].value,
+                    lastName = row[TeachersTable.lastName],
+                    firstName = row[TeachersTable.firstName],
+                    middleName = row[TeachersTable.middleName],
+                    departments = row[TeachersTable.departments],
                 )
             }
     }
@@ -31,11 +38,11 @@ class TeacherService(
         middleName: String,
         departments: String? = null,
     ): Int = transaction(database) {
-        Teachers.insertAndGetId {
-            it[Teachers.lastName] = lastName.trim()
-            it[Teachers.firstName] = firstName.trim()
-            it[Teachers.middleName] = middleName.trim()
-            it[Teachers.departments] = departments?.trim().orEmpty()
+        TeachersTable.insertAndGetId {
+            it[TeachersTable.lastName] = lastName.trim()
+            it[TeachersTable.firstName] = firstName.trim()
+            it[TeachersTable.middleName] = middleName.trim()
+            it[TeachersTable.departments] = departments?.trim().orEmpty()
         }.value
     }
 
@@ -46,23 +53,23 @@ class TeacherService(
         middleName: String,
         departments: String?,
     ) = transaction(database) {
-        Teachers.update({ Teachers.id eq id }) {
-            it[Teachers.lastName] = lastName.trim()
-            it[Teachers.firstName] = firstName.trim()
-            it[Teachers.middleName] = middleName.trim()
+        TeachersTable.update({ TeachersTable.id eq id }) {
+            it[TeachersTable.lastName] = lastName.trim()
+            it[TeachersTable.firstName] = firstName.trim()
+            it[TeachersTable.middleName] = middleName.trim()
             if (departments != null) {
-                it[Teachers.departments] = departments.trim()
+                it[TeachersTable.departments] = departments.trim()
             }
         }
     }
 
     fun delete(id: Int) = transaction(database) {
-        Teachers.deleteWhere { Teachers.id eq id }
+        TeachersTable.deleteWhere { TeachersTable.id eq id }
     }
 
     fun delete(ids: Collection<Int>) = transaction(database) {
         ids.forEach { id ->
-            Teachers.deleteWhere { Teachers.id eq id }
+            TeachersTable.deleteWhere { TeachersTable.id eq id }
         }
     }
 }

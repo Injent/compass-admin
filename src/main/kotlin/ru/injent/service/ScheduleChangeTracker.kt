@@ -1,30 +1,39 @@
 package ru.injent.service
 
-import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.core.eq
-import org.jetbrains.exposed.v1.jdbc.*
+import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.jdbc.deleteWhere
+import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import org.jetbrains.exposed.v1.jdbc.upsert
+import ru.injent.database.ScheduleFileApprovalsTable
 
-object ScheduleFileApprovals : Table("schedule_file_approvals") {
-    val fileId = varchar("file_id", 160)
-    val fingerprint = varchar("fingerprint", 64)
-    override val primaryKey = PrimaryKey(fileId)
-}
-
+/**
+ * Сервис отслеживания изменений в файлах расписания по хэшу содержимого.
+ */
 class ScheduleChangeTracker(private val database: Database) {
+
+    /**
+     * Проверяет, изменился ли файл по сравнению с согласованным хэшем.
+     */
     fun isChanged(fileId: String, fingerprint: String): Boolean = transaction(database) {
-        ScheduleFileApprovals.selectAll().where { ScheduleFileApprovals.fileId eq fileId }
-            .singleOrNull()?.get(ScheduleFileApprovals.fingerprint) != fingerprint
+        ScheduleFileApprovalsTable.selectAll()
+            .where { ScheduleFileApprovalsTable.fileId eq fileId }
+            .singleOrNull()
+            ?.get(ScheduleFileApprovalsTable.fingerprint) != fingerprint
     }
 
+    /**
+     * Сохраняет новые хэши согласованных файлов и удаляет отсутствующие.
+     */
     fun approve(fingerprints: Map<String, String>, activeFileIds: Set<String>) = transaction(database) {
-        ScheduleFileApprovals.selectAll().toList()
-            .filter { it[ScheduleFileApprovals.fileId] !in activeFileIds }
+        ScheduleFileApprovalsTable.selectAll().toList()
+            .filter { it[ScheduleFileApprovalsTable.fileId] !in activeFileIds }
             .forEach { row ->
-                ScheduleFileApprovals.deleteWhere { fileId eq row[ScheduleFileApprovals.fileId] }
+                ScheduleFileApprovalsTable.deleteWhere { fileId eq row[ScheduleFileApprovalsTable.fileId] }
             }
         fingerprints.forEach { (id, hash) ->
-            ScheduleFileApprovals.upsert {
+            ScheduleFileApprovalsTable.upsert {
                 it[fileId] = id
                 it[fingerprint] = hash
             }

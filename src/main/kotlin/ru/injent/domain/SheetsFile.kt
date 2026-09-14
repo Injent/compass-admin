@@ -1,8 +1,11 @@
-package ru.injent.dto
+package ru.injent.domain
 
 import kotlinx.serialization.Serializable
 import kotlin.time.Instant
 
+/**
+ * Доменное представление файла таблиц расписания.
+ */
 @Serializable
 data class SheetsFile(
     val fileId: String,

@@ -20,13 +20,17 @@ class AuthService(
 
         val login = decoded.substring(0, separatorIndex)
         val password = decoded.substring(separatorIndex + 1)
+        return authenticate(login, password)
+    }
+
+    fun authenticate(login: String, password: String): AuthUser? {
         val access = users[login] ?: return null
         if (access.password != password) return null
 
         return AuthUser(
             login = access.login,
             role = access.role,
-            basicToken = token,
+            basicToken = Base64.encode("$login:$password".encodeToByteArray()),
         )
     }
 

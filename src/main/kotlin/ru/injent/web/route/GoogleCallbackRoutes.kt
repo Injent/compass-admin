@@ -1,18 +1,22 @@
-package ru.injent.page
+package ru.injent.web.route
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.application.call
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import ru.injent.service.google.NewGoogleService
+import ru.injent.service.google.GoogleWorkspaceService
 import ru.injent.service.google.SheetValidator
 
+/**
+ * Маршруты вебхука от Google для перезапуска валидации файла.
+ */
 fun Routing.googleSheetsCallbackPage(
-    googleService: NewGoogleService,
+    googleService: GoogleWorkspaceService,
     validators: Collection<SheetValidator>,
     applicationScope: CoroutineScope,
 ) {
@@ -34,7 +38,7 @@ fun Routing.googleSheetsCallbackPage(
 }
 
 private suspend fun ApplicationCall.restartValidation(
-    googleService: NewGoogleService,
+    googleService: GoogleWorkspaceService,
     validators: Collection<SheetValidator>,
     applicationScope: CoroutineScope,
 ) {

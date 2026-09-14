@@ -4,6 +4,7 @@ import com.google.api.services.sheets.v4.model.*
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.SchemaUtils
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import ru.injent.database.ScheduleFileApprovalsTable
 import ru.injent.service.google.scheduleFingerprint
 import java.nio.file.Files
 import kotlin.test.*
@@ -14,7 +15,7 @@ class ScheduleChangeTrackerTest {
         val path = Files.createTempFile("schedule-approvals-", ".db")
         try {
             val database = Database.connect("jdbc:sqlite:$path", driver = "org.sqlite.JDBC")
-            transaction(database) { SchemaUtils.create(ScheduleFileApprovals) }
+            transaction(database) { SchemaUtils.create(ScheduleFileApprovalsTable) }
             val tracker = ScheduleChangeTracker(database)
             assertTrue(tracker.isChanged("a", "v1"))
             tracker.approve(mapOf("a" to "v1", "b" to "v1"), setOf("a", "b"))

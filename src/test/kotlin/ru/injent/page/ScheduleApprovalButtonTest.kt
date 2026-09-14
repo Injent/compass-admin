@@ -1,5 +1,6 @@
 package ru.injent.page
 
+import ru.injent.web.dto.scheduleView
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue

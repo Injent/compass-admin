@@ -1,14 +1,20 @@
-package ru.injent.page
+package ru.injent.web.route
 
-import io.ktor.http.*
-import io.ktor.server.application.*
-import io.ktor.server.freemarker.*
-import io.ktor.server.request.*
-import io.ktor.server.response.*
-import io.ktor.server.routing.*
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.call
+import io.ktor.server.freemarker.FreeMarkerContent
+import io.ktor.server.request.receive
+import io.ktor.server.response.respond
+import io.ktor.server.routing.Routing
+import io.ktor.server.routing.get
+import io.ktor.server.routing.put
 import ru.injent.service.config.RemoteConfig
 import ru.injent.service.config.RemoteConfigService
+import ru.injent.web.dto.ApiError
 
+/**
+ * Маршруты управления удаленной конфигурацией приложения.
+ */
 fun Routing.configPage(remoteConfigService: RemoteConfigService) {
     get("/api/config") {
         runCatching { remoteConfigService.get() }

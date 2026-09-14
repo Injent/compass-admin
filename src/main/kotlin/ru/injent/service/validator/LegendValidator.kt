@@ -1,10 +1,13 @@
 package ru.injent.service.validator
 
-import ru.injent.service.google.Cell
 import ru.injent.service.google.SheetValidator
 import ru.injent.service.google.SheetValidatorScope
 import ru.injent.service.google.isWeekdayName
+import ru.injent.service.google.model.Cell
 
+/**
+ * Валидатор легенды таблицы (заголовки корпусов, группы, дни недели, интервалы времени).
+ */
 class LegendValidator : SheetValidator {
     override fun SheetValidatorScope.validate() {
         validateScheduleStartsNoEarlierThanSecondRow()
@@ -24,6 +27,9 @@ private fun SheetValidatorScope.validateScheduleStartsNoEarlierThanSecondRow() {
     }
 }
 
+/**
+ * Проверяет корректность наименований и форматирования заголовков корпусов ("1 корпус", "2 корпус").
+ */
 private fun SheetValidatorScope.validateCorpusHeaders(headerRowIdx: Int): Int {
     val firstCorpusCell = cellAt(headerRowIdx, FIRST_TIME_COL_IDX)
     val secondCorpusCell = cellAt(headerRowIdx, SECOND_TIME_COL_IDX)
@@ -64,6 +70,9 @@ private fun SheetValidatorScope.validateCorpusHeaders(headerRowIdx: Int): Int {
     ) + 1
 }
 
+/**
+ * Проверяет заголовки и подзаголовки групп на отсутствие лишних слов и корректность объединения колонок.
+ */
 private fun SheetValidatorScope.validateTableHeaders(headerRowIdx: Int, subheaderRowIdx: Int?) {
     val lastHeaderCol = maxOf(
         lastOccupiedColInRow(headerRowIdx),
@@ -135,6 +144,9 @@ private fun SheetValidatorScope.validateTableHeaders(headerRowIdx: Int, subheade
     }
 }
 
+/**
+ * Проверяет блоки дней недели, непрерывность их объединений и соответствующие ячейки времени.
+ */
 private fun SheetValidatorScope.validateDayBlocks(firstScheduleRow: Int, lastScheduleRow: Int) {
     if (lastScheduleRow < firstScheduleRow) return
 

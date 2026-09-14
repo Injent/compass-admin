@@ -1,9 +1,12 @@
 package ru.injent.service.validator
 
-import ru.injent.service.google.Cell
 import ru.injent.service.google.SheetValidator
 import ru.injent.service.google.SheetValidatorScope
+import ru.injent.service.google.model.Cell
 
+/**
+ * Валидатор ячеек с описанием предметов, аудиторий и преподавателей.
+ */
 class LessonValidator : SheetValidator {
     override fun SheetValidatorScope.validate() {
         lessonCells().forEach { cell ->
@@ -132,7 +135,7 @@ private fun validateTeacherNameFormat(rawName: String) {
 
     val dotCount = teacherName.count { it == '.' }
     if (dotCount == 0) {
-        error("В круглых скобках должен быть указан только преподаватель. Используйте тире чтобы указать дополнительную информацию.")
+        error("В круглых скобках должен быть указан только преподаватель. Используйте тире чтобы указать дополнительную информацию")
     }
     if (dotCount > 2) {
         error("У преподавателя должно быть 1 или 2 точки в инициалах")
@@ -148,7 +151,7 @@ private fun <T> ArrayDeque<T>.removeLastOrNullCompat(): T? =
 private fun String.indexesOf(char: Char): List<Int> =
     mapIndexedNotNull { idx, current -> idx.takeIf { current == char } }
 
-internal fun String.normalizedSpaces(): String =
+private fun String.normalizedSpaces(): String =
     trim().replace(WHITESPACE_REGEX, " ")
 
 private fun String.hasDotWithWrongCase(): Boolean =

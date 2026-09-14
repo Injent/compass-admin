@@ -1,15 +1,25 @@
-package ru.injent.page
+package ru.injent.web.route
 
-import io.ktor.http.*
-import io.ktor.server.application.*
-import io.ktor.server.freemarker.*
-import io.ktor.server.request.*
-import io.ktor.server.response.*
-import io.ktor.server.routing.*
-import kotlinx.serialization.Serializable
-import ru.injent.database.Teacher
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.call
+import io.ktor.server.freemarker.FreeMarkerContent
+import io.ktor.server.request.receive
+import io.ktor.server.response.respond
+import io.ktor.server.routing.Routing
+import io.ktor.server.routing.delete
+import io.ktor.server.routing.get
+import io.ktor.server.routing.post
+import io.ktor.server.routing.put
+import ru.injent.domain.Teacher
 import ru.injent.service.teacher.TeacherService
+import ru.injent.web.dto.ApiError
+import ru.injent.web.dto.DeleteTeachersRequest
+import ru.injent.web.dto.TeacherInput
+import ru.injent.web.dto.toView
 
+/**
+ * Маршруты управления базой данных преподавателей.
+ */
 fun Routing.teachersPage(teacherService: TeacherService) {
     get("/api/teachers") {
         call.respond(teacherService.getAll().map(Teacher::toView))
@@ -57,32 +67,3 @@ fun Routing.teachersPage(teacherService: TeacherService) {
         call.respond(FreeMarkerContent("index.html", indexModel(call)))
     }
 }
-
-@Serializable
-data class TeacherView(
-    val id: Int,
-    val lastName: String,
-    val firstName: String,
-    val middleName: String,
-    val departments: String,
-    val fullName: String,
-)
-
-@Serializable
-data class TeacherInput(
-    val lastName: String,
-    val firstName: String,
-    val middleName: String = "",
-    val departments: String = "",
-) {
-    fun isValid(): Boolean = lastName.isNotBlank() && firstName.isNotBlank()
-}
-
-@Serializable
-data class DeleteTeachersRequest(val ids: List<Int>)
-
-@Serializable
-data class ApiError(val error: String)
-
-private fun Teacher.toView(): TeacherView =
-    TeacherView(id, lastName, firstName, middleName, departments, fullName)

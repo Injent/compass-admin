@@ -9,6 +9,8 @@ import com.google.api.services.sheets.v4.model.GridData
 import com.google.api.services.sheets.v4.model.GridRange
 import com.google.api.services.sheets.v4.model.RowData
 import com.google.api.services.sheets.v4.model.Sheet
+import ru.injent.service.google.model.Cell
+import ru.injent.service.google.model.CellError
 import ru.injent.service.validator.LegendValidator
 import ru.injent.service.validator.LessonValidator
 import ru.injent.service.validator.lessonCells

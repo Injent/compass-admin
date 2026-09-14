@@ -1,6 +1,7 @@
-package ru.injent.page
+package ru.injent.web.route
 
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.call
 import io.ktor.server.freemarker.FreeMarkerContent
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Routing
@@ -8,10 +9,14 @@ import io.ktor.server.routing.get
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import ru.injent.web.dto.ApiError
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 
+/**
+ * Маршруты справочного раздела приложения.
+ */
 fun Routing.guidePage() {
     get("/guide") {
         call.respond(FreeMarkerContent("index.html", indexModel(call)))

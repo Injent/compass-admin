@@ -1,18 +1,10 @@
 package ru.injent.service.google
 
-import com.google.api.client.http.InputStreamContent
 import com.google.api.client.googleapis.json.GoogleJsonResponseException
+import com.google.api.client.http.InputStreamContent
 import com.google.api.services.drive.Drive
-import com.google.api.services.drive.model.File
 import com.google.api.services.sheets.v4.Sheets
 import com.google.api.services.sheets.v4.model.BatchUpdateSpreadsheetRequest
-import com.google.api.services.sheets.v4.model.CellData
-import com.google.api.services.sheets.v4.model.CellFormat
-import com.google.api.services.sheets.v4.model.Color
-import com.google.api.services.sheets.v4.model.ExtendedValue
-import com.google.api.services.sheets.v4.model.GridRange
-import com.google.api.services.sheets.v4.model.RepeatCellRequest
-import com.google.api.services.sheets.v4.model.Request
 import io.ktor.util.logging.Logger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -34,28 +26,30 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import ru.injent.dto.FileStatus
-import ru.injent.dto.SheetsFile
-import ru.injent.service.ScheduleGroup
-import ru.injent.service.normalizedGroupName
+import ru.injent.domain.FileStatus
+import ru.injent.domain.ScheduleGroup
+import ru.injent.domain.SheetsFile
 import ru.injent.service.ScheduleChangeTracker
 import ru.injent.service.ScheduleGroupService
+import ru.injent.service.google.model.*
 import ru.injent.service.validator.LegendValidator
 import ru.injent.service.validator.LessonValidator
 import ru.injent.service.validator.TeacherValidator
 import ru.injent.service.wordcorrection.WordCorrectionService
-import java.util.concurrent.ConcurrentHashMap
+import ru.injent.util.normalizedGroupName
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
-import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 
-class NewGoogleService(
+/**
+ * Сервис управления файлами расписания в Google Drive и их валидации через Google Sheets API.
+ */
+class GoogleWorkspaceService(
     private val drive: Drive,
     private val sheets: Sheets,
     private val logger: Logger,
@@ -82,7 +76,6 @@ class NewGoogleService(
         get() = readingProgressState.value ?: validationProgressState.value
     private val groupConflictsMutex = Mutex()
     private val groupHeadersByFile = ConcurrentHashMap<String, List<GroupHeaderCell>>()
-    // ponytail: one workspace-wide lock; split only if real concurrent administration is required.
     private val scheduleOperationMutex = Mutex()
     private val scheduleGroupVersion = MutableStateFlow(0)
 
@@ -93,8 +86,17 @@ class NewGoogleService(
         field = MutableStateFlow(false)
 
     val scheduleUpdates: Flow<List<SheetsFile>>
-        get() = merge(files, scheduleGroupVersion.map { files.value }, googleWaitMessage.map { files.value }, validationProgressState.map { files.value }, readingProgressState.map { files.value })
+        get() = merge(
+            files,
+            scheduleGroupVersion.map { files.value },
+            googleWaitMessage.map { files.value },
+            validationProgressState.map { files.value },
+            readingProgressState.map { files.value }
+        )
 
+    /**
+     * Загружает файлы расписания из папки рабочего пространства Drive.
+     */
     suspend fun loadFiles(): Result<Unit> {
         val result = withScheduleOperation {
             val folder = getWorkspaceFolder().getOrElse { return@withScheduleOperation Result.failure(it) }
@@ -142,27 +144,30 @@ class NewGoogleService(
             .executeMediaAsInputStream()
     }
 
+    /**
+     * Экспортирует список файлов в ZIP-архив с блокировкой параллельного доступа.
+     */
     suspend fun exportAsZipTo(fileNamesById: Map<String, String>, output: OutputStream) =
         withFileLocks(fileNamesById.keys) {
             runResulting("export zip ${fileNamesById.keys}") {
-            val deferredFiles = fileNamesById.keys.map { id ->
-                async(ioDispatcher) {
-                    id to downloadFileWithRetry(id).getOrThrow()
+                val deferredFiles = fileNamesById.keys.map { id ->
+                    async(ioDispatcher) {
+                        id to downloadFileWithRetry(id).getOrThrow()
+                    }
                 }
-            }
 
-            val downloadedFiles = deferredFiles.awaitAll()
+                val downloadedFiles = deferredFiles.awaitAll()
 
-            ZipOutputStream(output).use { zipOut ->
-                for ((fileId, bytes) in downloadedFiles) {
-                    val entry = ZipEntry(fileNamesById[fileId] ?: fileId)
-                    zipOut.putNextEntry(entry)
-                    zipOut.write(bytes)
-                    zipOut.closeEntry()
+                ZipOutputStream(output).use { zipOut ->
+                    for ((fileId, bytes) in downloadedFiles) {
+                        val entry = ZipEntry(fileNamesById[fileId] ?: fileId)
+                        zipOut.putNextEntry(entry)
+                        zipOut.write(bytes)
+                        zipOut.closeEntry()
+                    }
                 }
             }
         }
-    }
 
     suspend fun updateFileContent(
         fileId: String,
@@ -264,7 +269,6 @@ class NewGoogleService(
         }
         notifyScheduleGroupUpdate()
         refreshGroupConflicts()
-        Unit
     }
 
     suspend fun restore(fileId: String): Result<Unit> {
@@ -280,8 +284,7 @@ class NewGoogleService(
     }
 
     /**
-     * Проверяет валидность таблицы по правилам валидаторов
-     * Если вызвать повторно когда старая операция еще не закончилась, то она прервется и начнется новая
+     * Проверяет валидность таблицы по правилам валидаторов.
      */
     suspend fun test(
         fileId: String,
@@ -597,9 +600,9 @@ class NewGoogleService(
             Result.success(
                 executeGoogleRequestWithRetry("download '$fileId'") {
                     drive.files()
-                    .export(fileId, XLSX_MIME)
-                    .executeMediaAsInputStream()
-                    .use { it.readBytes() }
+                        .export(fileId, XLSX_MIME)
+                        .executeMediaAsInputStream()
+                        .use { it.readBytes() }
                 }
             )
         } catch (error: CancellationException) {
@@ -801,30 +804,13 @@ class NewGoogleService(
         error("Unreachable Google request retry state")
     }
 
-    class UpdateFileContentScope() {
+    class UpdateFileContentScope {
         var name: String? = null
         var inputStream: InputStream? = null
         var contentType: String = XLSX_MIME
         var appProperties: MutableMap<String, String?> = mutableMapOf()
     }
 }
-
-data class CellCorrectionSuggestion(
-    val key: Int,
-    val rowIdx: Int,
-    val colIdx: Int,
-    val oldValue: String,
-    val newValue: String,
-    val replacements: List<CellReplacement>,
-)
-
-data class CellReplacement(
-    val rowIdx: Int,
-    val colIdx: Int,
-    val value: String,
-)
-
-private typealias GoogleFile = File
 
 private const val XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 private const val WORKSPACE_FOLDER_NAME = "Рабочее пространство"
@@ -837,122 +823,4 @@ private const val KEY_CONFLICT_GROUPS = "conflictGroups"
 private const val GOOGLE_SERVICE_UNAVAILABLE_STATUS = 503
 private const val GOOGLE_REQUEST_MAX_ATTEMPTS = 3
 private val GOOGLE_REQUEST_RETRY_DELAY = 2.seconds
-
-private val GoogleFile.status: FileStatus
-    get() = runCatching { appProperties?.get(KEY_STATUS)?.let(FileStatus::valueOf) }.getOrNull() ?: FileStatus.EMPTY
-
-private val GoogleFile.canFixWithAi: Boolean
-    get() = false
-
-private val GoogleFile.conflictGroups: List<String>
-    get() = decodeConflictGroups(appProperties?.get(KEY_CONFLICT_GROUPS))
-
-private val GoogleFile.modifiedAtTime: Instant
-    get() = modifiedTime?.value?.let(Instant::fromEpochMilliseconds) ?: Clock.System.now()
-
-private val GoogleFile.uploadTime: Instant
-    get() = appProperties?.get(KEY_UPLOAD_TIME)
-        ?.let(String::toLongOrNull)
-        ?.let(Instant::fromEpochMilliseconds)
-        ?: Clock.System.now()
-
-private fun GoogleFile.toSheetsFile() = SheetsFile(
-    fileId = id,
-    name = name,
-    modifiedTime = modifiedAtTime,
-    uploadTime = uploadTime,
-    status = status,
-    canFixWithAi = canFixWithAi,
-    conflictGroups = conflictGroups,
-)
-
-private fun encodeConflictGroups(groups: List<String>): String =
-    Json.encodeToString(groups)
-
-private fun decodeConflictGroups(value: String?): List<String> =
-    value?.let { encoded ->
-        runCatching { Json.decodeFromString<List<String>>(encoded) }
-            .getOrDefault(emptyList())
-    }.orEmpty()
-
-@Suppress("FunctionName")
-private fun CellValueRequest(
-    sheetId: Int,
-    colIdx: Int,
-    rowIdx: Int,
-    value: String,
-) = Request().setRepeatCell(
-    RepeatCellRequest()
-        .setCell(
-            CellData()
-                .setUserEnteredValue(
-                    ExtendedValue().setStringValue(value)
-                )
-        )
-        .setRange(
-            GridRange()
-                .setSheetId(sheetId)
-                .setStartRowIndex(rowIdx)
-                .setEndRowIndex(rowIdx + 1)
-                .setStartColumnIndex(colIdx)
-                .setEndColumnIndex(colIdx + 1)
-        )
-        .setFields("userEnteredValue")
-)
-
-@Suppress("FunctionName")
-private fun ValidCellRequest(sheetId: Int, colIdx: Int, rowIdx: Int) = Request().setRepeatCell(
-    RepeatCellRequest()
-        .setCell(
-            CellData()
-                .setNote(null)
-                .setUserEnteredFormat(
-                    CellFormat().setBackgroundColor(null)
-                )
-        )
-        .setRange(
-            GridRange()
-                .setSheetId(sheetId)
-                .setStartRowIndex(rowIdx)
-                .setEndRowIndex(rowIdx + 1)
-                .setStartColumnIndex(colIdx)
-                .setEndColumnIndex(colIdx + 1)
-        )
-        .setFields("note, userEnteredFormat.backgroundColor")
-)
-
-@Suppress("FunctionName")
-private fun InvalidCellRequest(
-    sheetId: Int,
-    colIdx: Int,
-    rowIdx: Int,
-    comment: String
-) = Request().setRepeatCell(
-    RepeatCellRequest()
-        .setCell(
-            CellData()
-                .setNote(comment)
-                .setUserEnteredFormat(
-                    CellFormat().setBackgroundColor(ErrorBackgroundColor)
-                )
-        )
-        .setRange(
-            GridRange()
-                .setSheetId(sheetId)
-                .setStartRowIndex(rowIdx)
-                .setEndRowIndex(rowIdx + 1)
-                .setStartColumnIndex(colIdx)
-                .setEndColumnIndex(colIdx + 1)
-        )
-        .setFields("note, userEnteredFormat.backgroundColor")
-)
-
-private val ErrorBackgroundColor: Color = Color()
-    .setRed(0.957f)
-    .setGreen(0.78f)
-    .setBlue(0.765f)
-
-@Serializable
-data class FileValidationProgress(val total: Int = 0, val completed: Int = 0)
-
 private const val GROUP_CONFLICT_NOTE_PREFIX = "Такая группа уже есть в файле "

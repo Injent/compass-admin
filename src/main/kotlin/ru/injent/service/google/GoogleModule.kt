@@ -19,6 +19,9 @@ import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
 import java.io.File
 
+/**
+ * Koin-модуль авторизации и интеграции с Google Drive & Sheets API.
+ */
 val googleModule = module {
     single<JsonFactory> {
         GsonFactory.getDefaultInstance()
@@ -44,7 +47,7 @@ val googleModule = module {
             .setApplicationName(APP_NAME)
             .build()
     }
-    singleOf(::NewGoogleService)
+    singleOf(::GoogleWorkspaceService)
 }
 
 private const val APP_NAME = "Validation Sheets"
@@ -69,6 +72,5 @@ private fun getGoogleCredential(
         .build()
 
     val receiver = LocalServerReceiver.Builder().setPort(8888).build()
-    val credential = AuthorizationCodeInstalledApp(flow, receiver).authorize("user")
-    return credential
+    return AuthorizationCodeInstalledApp(flow, receiver).authorize("user")
 }

@@ -3,7 +3,11 @@ package ru.injent.service.validator
 import ru.injent.service.google.SheetValidator
 import ru.injent.service.google.SheetValidatorScope
 import ru.injent.service.teacher.TeacherService
+import ru.injent.util.normalizedSpaces
 
+/**
+ * Валидатор соответствия преподавателей в расписании базе данных преподавателей.
+ */
 class TeacherValidator(
     private val teacherService: TeacherService,
 ) : SheetValidator {

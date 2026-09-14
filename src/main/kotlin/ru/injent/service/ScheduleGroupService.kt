@@ -1,21 +1,29 @@
 package ru.injent.service
 
 import org.jetbrains.exposed.v1.core.eq
-import org.jetbrains.exposed.v1.jdbc.*
+import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.jdbc.deleteWhere
+import org.jetbrains.exposed.v1.jdbc.insert
+import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import org.jetbrains.exposed.v1.jdbc.update
 import ru.injent.database.SCHEDULE_GROUP_SYNC_STATUS_ACTIVE
 import ru.injent.database.SCHEDULE_GROUP_SYNC_STATUS_DELETE_PENDING
-import ru.injent.database.ScheduleGroups
-import ru.injent.service.google.Cell
+import ru.injent.database.ScheduleGroupsTable
+import ru.injent.domain.ScheduleGroup
+import ru.injent.service.google.model.Cell
+import ru.injent.util.combineGroupName
+import ru.injent.util.normalizedGroupName
 
-internal data class ScheduleGroup(
-    val name: String,
-    val normalizedName: String,
-)
-
+/**
+ * Сервис учета и синхронизации учебных групп расписания в БД.
+ */
 class ScheduleGroupService(
     private val database: Database,
 ) {
+    /**
+     * Синхронизирует список групп для файла расписания [fileId].
+     */
     fun syncGroups(fileId: String, groupNames: Collection<String>) = transaction(database) {
         val groups = groupNames
             .map(String::trim)
@@ -28,35 +36,35 @@ class ScheduleGroupService(
             }
             .distinctBy(ScheduleGroup::normalizedName)
         val normalizedNames = groups.mapTo(mutableSetOf(), ScheduleGroup::normalizedName)
-        val fileRows = ScheduleGroups
+        val fileRows = ScheduleGroupsTable
             .selectAll()
-            .filter { row -> row[ScheduleGroups.fileId] == fileId }
+            .filter { row -> row[ScheduleGroupsTable.fileId] == fileId }
 
         fileRows
-            .filter { row -> row[ScheduleGroups.normalizedName] !in normalizedNames }
+            .filter { row -> row[ScheduleGroupsTable.normalizedName] !in normalizedNames }
             .forEach { row ->
-                ScheduleGroups.update({ ScheduleGroups.id eq row[ScheduleGroups.id] }) {
-                    it[ScheduleGroups.syncStatus] = SCHEDULE_GROUP_SYNC_STATUS_DELETE_PENDING
+                ScheduleGroupsTable.update({ ScheduleGroupsTable.id eq row[ScheduleGroupsTable.id] }) {
+                    it[ScheduleGroupsTable.syncStatus] = SCHEDULE_GROUP_SYNC_STATUS_DELETE_PENDING
                 }
             }
 
         groups.forEach { group ->
             val existingRow = fileRows.firstOrNull { row ->
-                row[ScheduleGroups.normalizedName] == group.normalizedName
+                row[ScheduleGroupsTable.normalizedName] == group.normalizedName
             }
 
             if (existingRow == null) {
-                ScheduleGroups.insert {
-                    it[ScheduleGroups.fileId] = fileId
-                    it[ScheduleGroups.name] = group.name
-                    it[ScheduleGroups.normalizedName] = group.normalizedName
-                    it[ScheduleGroups.syncStatus] = SCHEDULE_GROUP_SYNC_STATUS_ACTIVE
+                ScheduleGroupsTable.insert {
+                    it[ScheduleGroupsTable.fileId] = fileId
+                    it[ScheduleGroupsTable.name] = group.name
+                    it[ScheduleGroupsTable.normalizedName] = group.normalizedName
+                    it[ScheduleGroupsTable.syncStatus] = SCHEDULE_GROUP_SYNC_STATUS_ACTIVE
                 }
             } else {
-                ScheduleGroups.update({ ScheduleGroups.id eq existingRow[ScheduleGroups.id] }) {
-                    it[ScheduleGroups.name] = group.name
-                    it[ScheduleGroups.normalizedName] = group.normalizedName
-                    it[ScheduleGroups.syncStatus] = SCHEDULE_GROUP_SYNC_STATUS_ACTIVE
+                ScheduleGroupsTable.update({ ScheduleGroupsTable.id eq existingRow[ScheduleGroupsTable.id] }) {
+                    it[ScheduleGroupsTable.name] = group.name
+                    it[ScheduleGroupsTable.normalizedName] = group.normalizedName
+                    it[ScheduleGroupsTable.syncStatus] = SCHEDULE_GROUP_SYNC_STATUS_ACTIVE
                 }
             }
         }
@@ -66,12 +74,12 @@ class ScheduleGroupService(
         val ids = fileIds.toSet()
         if (ids.isEmpty()) return@transaction
 
-        ScheduleGroups
+        ScheduleGroupsTable
             .selectAll()
-            .filter { row -> row[ScheduleGroups.fileId] in ids }
+            .filter { row -> row[ScheduleGroupsTable.fileId] in ids }
             .forEach { row ->
-                ScheduleGroups.update({ ScheduleGroups.id eq row[ScheduleGroups.id] }) {
-                    it[ScheduleGroups.syncStatus] = SCHEDULE_GROUP_SYNC_STATUS_DELETE_PENDING
+                ScheduleGroupsTable.update({ ScheduleGroupsTable.id eq row[ScheduleGroupsTable.id] }) {
+                    it[ScheduleGroupsTable.syncStatus] = SCHEDULE_GROUP_SYNC_STATUS_DELETE_PENDING
                 }
             }
     }
@@ -79,9 +87,9 @@ class ScheduleGroupService(
     fun markMissingFilesDeleted(existingFileIds: Collection<String>) {
         val existingIds = existingFileIds.toSet()
         val missingIds = transaction(database) {
-            ScheduleGroups
+            ScheduleGroupsTable
                 .selectAll()
-                .map { row -> row[ScheduleGroups.fileId] }
+                .map { row -> row[ScheduleGroupsTable.fileId] }
                 .filterNot(existingIds::contains)
                 .distinct()
         }
@@ -89,25 +97,25 @@ class ScheduleGroupService(
     }
 
     internal fun activeGroupsByFile(): Map<String, List<ScheduleGroup>> = transaction(database) {
-        ScheduleGroups.selectAll()
-            .filter { it[ScheduleGroups.syncStatus] == SCHEDULE_GROUP_SYNC_STATUS_ACTIVE }
-            .groupBy({ it[ScheduleGroups.fileId] }, {
-                ScheduleGroup(it[ScheduleGroups.name], it[ScheduleGroups.normalizedName])
+        ScheduleGroupsTable.selectAll()
+            .filter { it[ScheduleGroupsTable.syncStatus] == SCHEDULE_GROUP_SYNC_STATUS_ACTIVE }
+            .groupBy({ it[ScheduleGroupsTable.fileId] }, {
+                ScheduleGroup(it[ScheduleGroupsTable.name], it[ScheduleGroupsTable.normalizedName])
             })
     }
 
     fun groupsToRemove(): List<String> = transaction(database) {
-        val rows = ScheduleGroups.selectAll().toList()
+        val rows = ScheduleGroupsTable.selectAll().toList()
         val activeGroupNames = rows
-            .filter { row -> row[ScheduleGroups.syncStatus] == SCHEDULE_GROUP_SYNC_STATUS_ACTIVE }
-            .mapTo(mutableSetOf()) { row -> row[ScheduleGroups.normalizedName] }
+            .filter { row -> row[ScheduleGroupsTable.syncStatus] == SCHEDULE_GROUP_SYNC_STATUS_ACTIVE }
+            .mapTo(mutableSetOf()) { row -> row[ScheduleGroupsTable.normalizedName] }
 
         rows
             .filter { row ->
-                row[ScheduleGroups.syncStatus] == SCHEDULE_GROUP_SYNC_STATUS_DELETE_PENDING &&
-                    row[ScheduleGroups.normalizedName] !in activeGroupNames
+                row[ScheduleGroupsTable.syncStatus] == SCHEDULE_GROUP_SYNC_STATUS_DELETE_PENDING &&
+                    row[ScheduleGroupsTable.normalizedName] !in activeGroupNames
             }
-            .map { row -> row[ScheduleGroups.normalizedName] }
+            .map { row -> row[ScheduleGroupsTable.normalizedName] }
             .distinct()
             .sorted()
     }
@@ -116,18 +124,21 @@ class ScheduleGroupService(
         val names = normalizedGroupNames.toSet()
         if (names.isEmpty()) return@transaction
 
-        ScheduleGroups
+        ScheduleGroupsTable
             .selectAll()
             .filter { row ->
-                row[ScheduleGroups.syncStatus] == SCHEDULE_GROUP_SYNC_STATUS_DELETE_PENDING &&
-                    row[ScheduleGroups.normalizedName] in names
+                row[ScheduleGroupsTable.syncStatus] == SCHEDULE_GROUP_SYNC_STATUS_DELETE_PENDING &&
+                    row[ScheduleGroupsTable.normalizedName] in names
             }
             .forEach { row ->
-                ScheduleGroups.deleteWhere { ScheduleGroups.id eq row[ScheduleGroups.id] }
+                ScheduleGroupsTable.deleteWhere { ScheduleGroupsTable.id eq row[ScheduleGroupsTable.id] }
             }
     }
 }
 
+/**
+ * Извлекает названия учебных групп из заголовков таблицы.
+ */
 internal fun scheduleGroupNamesFromHeaders(
     rows: List<List<Cell>>,
     headerRowIdx: Int,
@@ -164,25 +175,4 @@ internal fun scheduleGroupNamesFromHeaders(
         .distinct()
 }
 
-fun String.normalizedGroupName(): String =
-    trim()
-        .lowercase()
-        .replace('ё', 'е')
-        .replace(WHITESPACE_REGEX, " ")
-        .replace(PARENTHESES_SPACES_REGEX, "\$1")
-
-internal fun combineGroupName(headerName: String, subheaderName: String): String {
-    val normalizedHeader = headerName.normalizedGroupName()
-    val normalizedSubheader = subheaderName.normalizedGroupName()
-
-    return when {
-        normalizedSubheader.startsWith(normalizedHeader) -> subheaderName
-        subheaderName.startsWith("(") || subheaderName.startsWith("[") -> headerName + subheaderName
-        else -> "$headerName($subheaderName)"
-    }
-}
-
 private const val FIRST_GROUP_COL_IDX = 3
-
-private val WHITESPACE_REGEX = Regex("\\s+")
-private val PARENTHESES_SPACES_REGEX = Regex("\\s*([()])\\s*")

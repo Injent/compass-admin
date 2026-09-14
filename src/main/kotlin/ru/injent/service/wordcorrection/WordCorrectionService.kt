@@ -4,10 +4,13 @@ import chat.giga.client.GigaChatClient
 import chat.giga.model.completion.ChatMessage
 import chat.giga.model.completion.ChatMessageRole
 import chat.giga.model.completion.CompletionRequest
-import io.ktor.util.logging.*
+import io.ktor.util.logging.Logger
 import ru.injent.service.config.AppConfig
 import java.io.File
 
+/**
+ * Сервис исправлений опечаток в предметах/преподавателях с помощью GigaChat API.
+ */
 class WordCorrectionService(
     private val gigaChat: GigaChatClient,
     private val logger: Logger,
@@ -18,6 +21,9 @@ class WordCorrectionService(
         File(config.gigachat.systemInstructionsFilePath).readText()
     }
 
+    /**
+     * Отправляет пакет некорректных строк в GigaChat для получения исправленного варианта.
+     */
     fun correctWords(input: Map<Int, String>): Map<Int, String> {
         if (input.isEmpty()) return emptyMap()
 

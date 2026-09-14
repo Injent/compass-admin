@@ -1,15 +1,23 @@
 package ru.injent.service.google
 
-import com.google.api.services.sheets.v4.model.CellData
 import com.google.api.services.sheets.v4.model.GridRange
 import com.google.api.services.sheets.v4.model.Sheet
+import ru.injent.service.google.model.Cell
+import ru.injent.service.google.model.CellError
+import ru.injent.service.google.model.GroupHeaderCell
 import ru.injent.service.scheduleGroupNamesFromHeaders
-import ru.injent.service.combineGroupName
+import ru.injent.util.combineGroupName
 
+/**
+ * Интерфейс валидатора листа таблицы расписания.
+ */
 fun interface SheetValidator {
     fun SheetValidatorScope.validate()
 }
 
+/**
+ * Контекст выполнения валидации листа таблицы с агрегацией ошибок.
+ */
 class SheetValidatorScope(
     private val sheet: Sheet
 ) {
@@ -99,7 +107,7 @@ class SheetValidatorScope(
     private val initialErrorCells = rows.flatten().filter(Cell::hasBackground)
 
     /**
-     * Возвращет ошибки, которые были исправлены во время проверки
+     * Возвращает ошибки, которые были исправлены во время проверки.
      */
     fun getFixedErrors(): List<CellError> {
         val currentErrorCells = accumulatedErrors
@@ -118,7 +126,7 @@ class SheetValidatorScope(
     }
 
     /**
-     * Возвращает накопленные ошибки за время проверки
+     * Возвращает накопленные ошибки за время проверки.
      */
     fun getAccumulatedErrors(): List<CellError> = accumulatedErrors
 
@@ -135,91 +143,6 @@ class SheetValidatorScope(
     }
 }
 
-data class CellError(
-    val rowIdx: Int,
-    val colIdx: Int,
-    val comment: String
-)
-
-data class Cell(
-    private val cellRef: CellData?,
-    private val range: GridRange,
-    val isMerged: Boolean
-) {
-    /**
-     * The start row (inclusive) of the range
-     */
-    val rowIdx: Int
-        get() = range.startRowIndex
-
-    /**
-     * The start column (inclusive) of the range
-     */
-    val colIdx: Int
-        get() = range.startColumnIndex
-
-    /**
-     * The end row (inclusive) of the range
-     */
-    val endRowIdx: Int
-        get() = range.endRowIndex.minus(1).coerceAtLeast(0)
-
-    /**
-     * The end column (inclusive) of the range
-     */
-    val endColIdx: Int
-        get() = range.endColumnIndex.minus(1).coerceAtLeast(0)
-
-    val value: String?
-        get() = cellRef?.userEnteredValue?.let {
-            it.stringValue ?: it.numberValue?.toString() ?: it.boolValue?.toString()
-        }?.normalizeCellValue()
-
-    val isRedText: Boolean
-        get() = (cellRef?.userEnteredFormat?.textFormat?.foregroundColor?.red ?: 0f) >= 0.9f
-
-    val isBoldText: Boolean
-        get() = cellRef?.userEnteredFormat?.textFormat?.bold ?: false
-
-    val note: String? get() = cellRef?.note
-
-    val hasBackground: Boolean
-        get() = cellRef?.userEnteredFormat?.backgroundColor != null
-
-    val borders: Borders?
-        get() = cellRef?.userEnteredFormat?.borders?.let { borders ->
-            Borders(
-                top = borders.top != null,
-                left = borders.left != null,
-                right = borders.right != null,
-                bottom = borders.bottom != null
-            ).takeIf { borders ->
-                arrayOf(
-                    borders.top,
-                    borders.left,
-                    borders.right,
-                    borders.bottom
-                ).any { it }
-            }
-        }
-
-    fun isEmpty() = value.isNullOrBlank() && borders == null
-
-    data class Borders(
-        val top: Boolean,
-        val left: Boolean,
-        val right: Boolean,
-        val bottom: Boolean
-    ) {
-        val isTopOnly: Boolean
-            get() = top && !left && !right && !bottom
-    }
-
-    override fun toString(): String {
-        return "Cell($rowIdx:$colIdx${if (isMerged) "$endRowIdx:$endColIdx" else ""} '$value')"
-    }
-}
-
 internal fun SheetValidatorScope.scheduleGroupNames(): List<String> {
     val detectedHeaderRowIdx = headerRowIdx ?: return emptyList()
 
@@ -233,15 +156,21 @@ internal fun SheetValidatorScope.scheduleGroupNames(): List<String> {
 internal fun String?.isWeekdayName(): Boolean =
     orEmpty().trim().lowercase().replace('ё', 'е') in WEEKDAY_NAMES
 
-private fun String.normalizeCellValue(): String =
-    replace(LINE_BREAKS_REGEX, " ")
-        .replace(INVISIBLE_CHARS_REGEX, "")
-        .replace(SPACES_REGEX, " ")
-        .trim()
+internal fun SheetValidatorScope.groupHeaderCells(sheetId: Int): List<GroupHeaderCell> =
+    rows.getOrNull(headerRowIdx ?: -1).orEmpty()
+        .filter { it.colIdx >= 3 && !it.value.isNullOrBlank() }
+        .flatMap { header ->
+            val subheaders = rows.getOrNull(subheaderRowIdx ?: -1).orEmpty()
+                .filter { it.colIdx in header.colIdx..header.endColIdx && !it.value.isNullOrBlank() }
+            if (subheaders.isEmpty()) {
+                listOf(GroupHeaderCell(header.value.orEmpty(), sheetId, header.rowIdx, header.colIdx, header.note))
+            } else {
+                subheaders.map { cell ->
+                    GroupHeaderCell(combineGroupName(header.value.orEmpty(), cell.value.orEmpty()), sheetId, cell.rowIdx, cell.colIdx, cell.note)
+                }
+            }
+        }
 
-private val LINE_BREAKS_REGEX = Regex("[\\r\\n\\t]+")
-private val INVISIBLE_CHARS_REGEX = Regex("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F\\u00AD\\u034F\\u061C\\u115F\\u1160\\u17B4\\u17B5\\u180E\\u200B-\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2060-\\u206F\\uFEFF]")
-private val SPACES_REGEX = Regex("[\\s\\u00A0]{2,}")
 private const val DAY_COL_IDX = 0
 private val TIME_COL_IDXS = 1..2
 private val WEEKDAY_NAMES = setOf(
@@ -253,24 +182,3 @@ private val WEEKDAY_NAMES = setOf(
     "суббота",
     "воскресенье",
 )
-
-internal data class GroupHeaderCell(
-    val name: String,
-    val sheetId: Int,
-    val row: Int,
-    val column: Int,
-    val note: String?,
-)
-
-internal fun SheetValidatorScope.groupHeaderCells(sheetId: Int): List<GroupHeaderCell> =
-    rows.getOrNull(headerRowIdx ?: -1).orEmpty()
-        .filter { it.colIdx >= 3 && !it.value.isNullOrBlank() }
-        .flatMap { header ->
-            val subheaders = rows.getOrNull(subheaderRowIdx ?: -1).orEmpty()
-                .filter { it.colIdx in header.colIdx..header.endColIdx && !it.value.isNullOrBlank() }
-            if (subheaders.isEmpty()) {
-                listOf(GroupHeaderCell(header.value.orEmpty(), sheetId, header.rowIdx, header.colIdx, header.note))
-            } else subheaders.map { cell ->
-                GroupHeaderCell(combineGroupName(header.value.orEmpty(), cell.value.orEmpty()), sheetId, cell.rowIdx, cell.colIdx, cell.note)
-            }
-        }
