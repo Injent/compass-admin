@@ -8,11 +8,15 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlin.time.Instant
 
+private val defaultTimeZone: TimeZone by lazy {
+    runCatching { TimeZone.of(System.getenv("COMPASS_TIMEZONE") ?: "Europe/Moscow") }
+        .getOrDefault(TimeZone.currentSystemDefault())
+}
+
 /**
- * Форматирует [Instant] в понятную пользователю дату и время расписания.
+ * Форматирует [Instant] в понятную пользователю дату и время расписания с учетом часового пояса.
  */
-fun Instant.formatScheduleDate(): String {
-    val timeZone = TimeZone.currentSystemDefault()
+fun Instant.formatScheduleDate(timeZone: TimeZone = defaultTimeZone): String {
     val now = Clock.System.now().toLocalDateTime(timeZone)
     val localDateTime = toLocalDateTime(timeZone)
     val date = localDateTime.date
@@ -30,7 +34,7 @@ fun Instant.formatScheduleDate(): String {
  * Возвращает наименование архива с расписанием за текущий день.
  */
 fun scheduleArchiveFileName(): String {
-    val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+    val today = Clock.System.now().toLocalDateTime(defaultTimeZone).date
     return "Расписание от ${today.day} ${today.month.number.monthAbbr()} ${today.year} г..zip"
 }
 

@@ -14,37 +14,7 @@
 </head>
 <body>
   <m3e-theme strong-focus scheme="light"><div id="app"><div style="display:grid;height:100%;place-items:center;font:500 16px Roboto,sans-serif">Загрузка…</div></div></m3e-theme>
-  <script>
-    window.__APP_CONFIG__ = { canAccessConfig: ${canAccessConfig?c} };
-    window.formatScheduleDate = function(value) {
-      if (!value) return '';
-      const date = new Date(value);
-      if (isNaN(date.getTime())) return value;
-
-      const now = new Date();
-      const isToday = date.toDateString() === now.toDateString();
-
-      const yesterday = new Date(now);
-      yesterday.setDate(now.getDate() - 1);
-      const isYesterday = date.toDateString() === yesterday.toDateString();
-
-      const hours = String(date.getHours()).padStart(2, '0');
-      const minutes = String(date.getMinutes()).padStart(2, '0');
-      const time = hours + ':' + minutes;
-
-      if (isToday) return time;
-      if (isYesterday) return 'вчера, ' + time;
-
-      const monthAbbrs = ['янв.', 'фев.', 'мар.', 'апр.', 'мая', 'июн.', 'июл.', 'авг.', 'сент.', 'окт.', 'нояб.', 'дек.'];
-      const day = date.getDate();
-      const month = monthAbbrs[date.getMonth()];
-
-      if (date.getFullYear() === now.getFullYear()) {
-        return day + ' ' + month + ' ' + time;
-      }
-      return day + ' ' + month + ' ' + date.getFullYear() + ' г.';
-    };
-  </script>
+  <script>window.__APP_CONFIG__ = { canAccessConfig: ${canAccessConfig?c} };</script>
   <script type="module" src="/static/vue/app.js"></script>
 </body>
 </html>
