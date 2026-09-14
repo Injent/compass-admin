@@ -52,6 +52,35 @@ watch(processing, active => {
   else hideProcessingTimer = setTimeout(() => { showProcessing.value = false }, 1500)
 }, { immediate: true })
 
+function formatDate(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (isNaN(date.getTime())) return value
+
+  const now = new Date()
+  const isToday = date.toDateString() === now.toDateString()
+
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  const isYesterday = date.toDateString() === yesterday.toDateString()
+
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  const time = `${hours}:${minutes}`
+
+  if (isToday) return time
+  if (isYesterday) return `вчера, ${time}`
+
+  const monthAbbrs = ['янв.', 'фев.', 'мар.', 'апр.', 'мая', 'июн.', 'июл.', 'авг.', 'сент.', 'окт.', 'нояб.', 'дек.']
+  const day = date.getDate()
+  const month = monthAbbrs[date.getMonth()]
+
+  if (date.getFullYear() === now.getFullYear()) {
+    return `${day} ${month} ${time}`
+  }
+  return `${day} ${month} ${date.getFullYear()} г.`
+}
+
 const files = computed(() => {
   const query = search.value.trim().toLocaleLowerCase('ru')
   return query ? state.value.files.filter(file => file.name.toLocaleLowerCase('ru').includes(query)) : state.value.files
@@ -256,8 +285,8 @@ onBeforeUnmount(() => { clearTimeout(hideProcessingTimer); events?.close(); appr
                   <span class="file-name-content">{{ file.name }}<small v-if="file.supportingText">{{ file.supportingText }}</small></span>
                   <span v-if="file.hasChanges" class="file-change-dot" role="img" aria-label="Изменён после последнего подтверждения" title="Изменён после последнего подтверждения" />
                 </span>
-                <span>{{ file.modifiedTime }}</span><span>{{ file.createdTime }}</span>
-                <m3e-checkbox v-if="deleteMode && file.status !== 'EMPTY'" :checked="selected.has(file.fileId)" @click.stop="toggle(file.fileId)" />
+                <span>{{ formatDate(file.modifiedTime) }}</span><span>{{ formatDate(file.createdTime) }}</span>
+                <input type="checkbox" class="selection-checkbox" :aria-label="`Выбрать: ${file.name}`" v-if="deleteMode && file.status !== 'EMPTY'" :checked="selected.has(file.fileId)" @click.stop @change="toggle(file.fileId)" />
                 <m3e-button v-else-if="file.status === 'EMPTY'" variant="text" @click.stop="restore(file.fileId)">Восстановить</m3e-button>
                 <m3e-icon-button v-else aria-label="Скачать файл" @click.stop="downloadFile(file.fileId)"><m3e-icon name="download" /></m3e-icon-button>
               </div>

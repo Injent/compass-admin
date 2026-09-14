@@ -111,7 +111,7 @@ onMounted(load)
               <div class="teacher-grid">
                 <strong>{{ index + 1 }}</strong>
                 <span>{{ teacher.fullName }}</span>
-                <m3e-checkbox v-if="deleteMode" :checked="selected.has(teacher.id)" @click.stop="toggle(teacher.id)" />
+                <input type="checkbox" class="selection-checkbox" :aria-label="`Выбрать: ${teacher.fullName}`" v-if="deleteMode" :checked="selected.has(teacher.id)" @click.stop @change="toggle(teacher.id)" />
                 <m3e-icon-button v-else aria-label="Редактировать" @click.stop="openEditor(teacher)"><m3e-icon name="edit" /></m3e-icon-button>
               </div>
             </m3e-list-action>

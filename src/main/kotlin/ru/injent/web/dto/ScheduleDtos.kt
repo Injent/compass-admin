@@ -4,7 +4,6 @@ import kotlinx.serialization.Serializable
 import ru.injent.domain.FileStatus
 import ru.injent.domain.SheetsFile
 import ru.injent.service.google.model.FileValidationProgress
-import ru.injent.util.formatScheduleDate
 import ru.injent.util.withoutSpreadsheetExtension
 
 const val FILTER_ALL = "all"
@@ -73,8 +72,8 @@ private fun SheetsFile.toView(): FileView =
         name = name.withoutSpreadsheetExtension(),
         status = displayStatus().name,
         statusText = displayStatus().toText(),
-        modifiedTime = modifiedTime.formatScheduleDate(),
-        createdTime = uploadTime.formatScheduleDate(),
+        modifiedTime = modifiedTime.toString(),
+        createdTime = uploadTime.toString(),
         icon = displayStatus().toIcon(),
         canFixWithAi = canFixWithAi,
         hasChanges = status != FileStatus.EMPTY && hasChanges,

@@ -97,3 +97,5 @@ m3e-shape[name="circle"] .status-icon m3e-icon { font-size: 18px; }
 .guide-page m3e-expansion-panel { --m3e-expansion-panel-content-padding: 0; }
 .guide-markdown > :first-child { margin-top: 0; }
 .guide-markdown > :last-child { margin-bottom: 0; }
+
+.selection-checkbox { width: 18px; height: 18px; margin: 11px; accent-color: var(--md-sys-color-primary, #6750a4); cursor: pointer; }
