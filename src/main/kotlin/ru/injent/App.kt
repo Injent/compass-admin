@@ -60,7 +60,12 @@ fun Application.configureApp() {
 
     install(SSE)
     install(ContentNegotiation) {
-        json()
+        json(
+            Json {
+                ignoreUnknownKeys = true
+                coerceInputValues = true
+            }
+        )
     }
     install(Resources)
     install(CORS) {
