@@ -23,6 +23,9 @@ import io.ktor.util.logging.Logger
 import io.ktor.utils.io.jvm.javaio.toInputStream
 import io.ktor.utils.io.streams.asInput
 import kotlinx.coroutines.CancellationException
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -274,12 +277,37 @@ private suspend fun sendRemovedGroupsWithRetry(
     error("Не удалось удалить группы в Compass: $reason$responseDetails")
 }
 
-/**
- * Загружает новые файлы расписания в свободные слоты Drive.
- */
-suspend fun uploadFilesToFreeSlots(
+internal data class PendingScheduleFile(val name: String, val content: File)
+
+internal suspend fun receiveScheduleFiles(multipart: MultiPartData): List<PendingScheduleFile> {
+    val files = mutableListOf<PendingScheduleFile>()
+    try {
+        multipart.forEachPart { part ->
+            try {
+                if (part is PartData.FileItem) {
+                    val name = part.originalFileName.orEmpty().substringAfterLast('/').substringAfterLast('\\')
+                    val file = File.createTempFile("schedule-upload-", ".tmp")
+                    files += PendingScheduleFile(name, file)
+                    withContext(Dispatchers.IO) {
+                        part.provider().toInputStream().use { input ->
+                            file.outputStream().use { input.copyTo(it) }
+                        }
+                    }
+                }
+            } finally {
+                part.release()
+            }
+        }
+        return files
+    } catch (error: Throwable) {
+        files.forEach { it.content.delete() }
+        throw error
+    }
+}
+
+internal suspend fun uploadFilesToFreeSlots(
     googleService: GoogleWorkspaceService,
-    multipart: MultiPartData,
+    files: List<PendingScheduleFile>,
     sheetValidators: Collection<SheetValidator>,
     applicationScope: CoroutineScope,
 ): UploadResult {
@@ -293,29 +321,24 @@ suspend fun uploadFilesToFreeSlots(
 
     var uploadedCount = 0
     var rejectedCount = 0
-
-    multipart.forEachPart { part ->
-        try {
-            if (part !is PartData.FileItem) return@forEachPart
-
-            val fileName = part.originalFileName.orEmpty().substringAfterLast('/').substringAfterLast('\\')
-            if (!fileName.hasSpreadsheetExtension()) {
-                rejectedCount++
-                return@forEachPart
-            }
-
-            val storedFileName = fileName.removeSpreadsheetExtension()
-            val target = existingFilesByName[storedFileName.scheduleFileNameKey()]
-                ?: freeFiles.removeFirstOrNull()
-            if (target == null) {
-                rejectedCount++
-                return@forEachPart
-            }
-            freeFiles.removeAll { file -> file.fileId == target.fileId }
-
+    for (file in files) {
+        val fileName = file.name
+        if (!fileName.hasSpreadsheetExtension()) {
+            rejectedCount++
+            continue
+        }
+        val storedFileName = fileName.removeSpreadsheetExtension()
+        val target = existingFilesByName[storedFileName.scheduleFileNameKey()]
+            ?: freeFiles.removeFirstOrNull()
+        if (target == null) {
+            rejectedCount++
+            continue
+        }
+        freeFiles.removeAll { it.fileId == target.fileId }
+        file.content.inputStream().use { input ->
             googleService.updateFileContent(target.fileId) {
                 name = storedFileName
-                inputStream = part.provider().toInputStream()
+                inputStream = input
                 contentType = if (fileName.endsWith(".xls", ignoreCase = true)) {
                     XlsContentType.toString()
                 } else {
@@ -326,16 +349,13 @@ suspend fun uploadFilesToFreeSlots(
                 appProperties[KEY_CAN_FIX_WITH_AI] = false.toString()
                 appProperties[KEY_CONFLICT_GROUPS] = "[]"
             }.getOrThrow()
-            existingFilesByName[storedFileName.scheduleFileNameKey()] = target.copy(name = storedFileName)
-            applicationScope.launch {
-                googleService.test(target.fileId, sheetValidators)
-            }
-            uploadedCount++
-        } finally {
-            part.release()
         }
+        existingFilesByName[storedFileName.scheduleFileNameKey()] = target.copy(name = storedFileName)
+        applicationScope.launch {
+            googleService.test(target.fileId, sheetValidators)
+        }
+        uploadedCount++
     }
-
     return when {
         uploadedCount == 0 && rejectedCount > 0 -> UploadResult(error = "Не удалось загрузить файлы: проверьте формат и свободные слоты")
         rejectedCount > 0 -> UploadResult(error = "Часть файлов не загружена: не хватило свободных слотов или формат не поддержан")

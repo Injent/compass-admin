@@ -13,6 +13,7 @@ const state = ref({ files: [], hasUnreadyFiles: false, canOpenScheduleApproval: 
 const loading = ref(true)
 const busy = ref(false)
 const uploading = ref(false)
+const uploadRunning = computed(() => uploading.value || state.value.upload?.running)
 const error = ref('')
 const deleteMode = ref(false)
 const selected = ref(new Set())
@@ -43,7 +44,7 @@ const validationPercent = computed(() => validationProgress.value.total > 0
   : 0)
 const processing = computed(() => Boolean(
   validationProgress.value.completed < validationProgress.value.total ||
-  uploading.value || state.value.googleWaitMessage || state.value.filesLoaded === false ||
+  uploadRunning.value || state.value.googleWaitMessage || state.value.filesLoaded === false ||
   state.value.files.some(file => file.status === 'PROCESSING')
 ))
 watch(processing, active => {
@@ -91,7 +92,7 @@ async function load() {
   loading.value = true
   try {
     state.value = await api(`/api/schedule?f=${filter.value}`)
-    error.value = state.value.error || ''
+    error.value = state.value.upload?.error || state.value.error || ''
   } catch (cause) {
     error.value = cause.message
   } finally {
@@ -103,6 +104,7 @@ function connectScheduleEvents() {
   events = new EventSource(`/api/schedule/events?f=${filter.value}`)
   events.addEventListener('schedule', event => {
     state.value = JSON.parse(event.data)
+    if (state.value.upload?.error) error.value = state.value.upload.error
     selected.value = new Set([...selected.value].filter(id => state.value.files.some(file => file.fileId === id)))
   })
 }
@@ -120,11 +122,12 @@ async function upload(event) {
   if (!event.target.files.length) return
   busy.value = true
   uploading.value = true
+  error.value = ''
   const body = new FormData()
   for (const file of event.target.files) body.append('files', file)
   try {
     state.value = await api(`/api/schedule/upload?f=${filter.value}`, { method: 'POST', body })
-    error.value = state.value.error || ''
+    error.value = state.value.upload?.error || state.value.error || ''
   } catch (cause) {
     error.value = cause.message
   } finally {
@@ -142,7 +145,7 @@ async function removeSelected() {
     })
     deleteMode.value = false
     selected.value = new Set()
-    error.value = state.value.error || ''
+    error.value = state.value.upload?.error || state.value.error || ''
   } catch (cause) {
     error.value = cause.message
   } finally {
@@ -230,13 +233,13 @@ onBeforeUnmount(() => { clearTimeout(hideProcessingTimer); events?.close(); appr
         <m3e-button v-if="deleteMode" @click="deleteMode = false; selected = new Set()">
           <m3e-icon slot="icon" name="close" variant="rounded" />Отмена
         </m3e-button>
-        <m3e-button v-else :disabled="busy" @click="fileInput.click()">
-          <m3e-circular-progress-indicator v-if="uploading" class="upload-loader" slot="icon" indeterminate />
+        <m3e-button v-else :disabled="busy || uploadRunning" @click="fileInput.click()">
+          <m3e-circular-progress-indicator v-if="uploadRunning" class="upload-loader" slot="icon" indeterminate />
           <m3e-icon v-else slot="icon" name="upload" />Загрузить новый файл
         </m3e-button>
         <m3e-button @click="downloadAll"><m3e-icon slot="icon" name="download" />Скачать все</m3e-button>
         <m3e-button
-          :disabled="filter === 'deleted' || busy || (deleteMode && !selected.size)"
+          :disabled="filter === 'deleted' || busy || uploadRunning || (deleteMode && !selected.size)"
           @click="deleteMode ? removeSelected() : deleteMode = true"
         >
           <m3e-icon slot="icon" name="delete" />

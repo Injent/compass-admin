@@ -15,11 +15,13 @@ import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.sse.sse
+import io.ktor.server.sse.heartbeat
 import io.ktor.util.logging.Logger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
@@ -36,6 +38,7 @@ import ru.injent.util.contentDisposition
 import ru.injent.util.ensureXlsxExtension
 import ru.injent.util.scheduleArchiveFileName
 import ru.injent.util.withInvalidPrefix
+import ru.injent.web.dto.ScheduleUploadState
 import ru.injent.web.dto.DeleteScheduleRequest
 import ru.injent.web.dto.ScheduleApprovalPreview
 import ru.injent.web.dto.ScheduleApprovalState
@@ -55,9 +58,11 @@ fun Routing.schedulePage(
     applicationScope: CoroutineScope,
     logger: Logger,
 ) {
+    val uploadState = MutableStateFlow(ScheduleUploadState())
     val approvalState = MutableStateFlow(ScheduleApprovalState.idle())
 
     sse("/api/google-sheets/quota/events") {
+        heartbeat { period = 15.seconds }
         googleService.sheetsQuotaUpdates.collect { quota ->
             send(data = Json.encodeToString(quota), event = "quota")
         }
@@ -67,6 +72,7 @@ fun Routing.schedulePage(
         call.respond(
             scheduleView(
                 files = googleService.files.value,
+                upload = uploadState.value,
                 filter = call.scheduleFilter,
                 filesLoaded = googleService.filesLoaded.value,
                 googleWaitMessage = googleService.googleWaitMessage.value,
@@ -76,25 +82,39 @@ fun Routing.schedulePage(
     }
 
     post("/api/schedule/upload") {
-        val result = googleService.withScheduleOperation {
-            uploadFilesToFreeSlots(
-                googleService = googleService,
-                multipart = call.receiveMultipart(),
-                sheetValidators = sheetValidators,
-                applicationScope = applicationScope,
-            )
+        val previous = uploadState.value
+        if (previous.running || !uploadState.compareAndSet(previous, ScheduleUploadState(running = true))) {
+            call.respond(HttpStatusCode.Conflict, mapOf("error" to "Загрузка файлов уже выполняется"))
+            return@post
         }
-        call.respond(
-            status = if (result.error == null) HttpStatusCode.OK else HttpStatusCode.BadRequest,
-            message = scheduleView(
-                files = googleService.files.value,
-                error = result.error,
-                filter = call.scheduleFilter,
-                filesLoaded = googleService.filesLoaded.value,
-                googleWaitMessage = googleService.googleWaitMessage.value,
-                validationProgress = googleService.processingProgress,
-            )
-        )
+        val files = try {
+            receiveScheduleFiles(call.receiveMultipart())
+        } catch (error: Throwable) {
+            uploadState.value = ScheduleUploadState(error = "Не удалось принять файлы")
+            throw error
+        }
+        val job = applicationScope.launch {
+            try {
+                val result = googleService.withScheduleOperation {
+                    uploadFilesToFreeSlots(googleService, files, sheetValidators, applicationScope)
+                }
+                uploadState.value = ScheduleUploadState(error = result.error)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                logger.error("Schedule upload failed", error)
+                uploadState.value = ScheduleUploadState(error = error.message ?: "Не удалось загрузить файлы")
+            }
+        }
+        job.invokeOnCompletion { files.forEach { it.content.delete() } }
+        call.respond(HttpStatusCode.Accepted, scheduleView(
+            files = googleService.files.value,
+            upload = uploadState.value,
+            filter = call.scheduleFilter,
+            filesLoaded = googleService.filesLoaded.value,
+            googleWaitMessage = googleService.googleWaitMessage.value,
+            validationProgress = googleService.processingProgress,
+        ))
     }
 
     post("/api/schedule/delete") {
@@ -110,6 +130,7 @@ fun Routing.schedulePage(
             status = if (error == null) HttpStatusCode.OK else HttpStatusCode.BadRequest,
             message = scheduleView(
                 files = googleService.files.value,
+                upload = uploadState.value,
                 error = error,
                 filter = call.scheduleFilter,
                 filesLoaded = googleService.filesLoaded.value,
@@ -131,6 +152,7 @@ fun Routing.schedulePage(
             status = if (error == null) HttpStatusCode.OK else HttpStatusCode.BadRequest,
             message = scheduleView(
                 files = googleService.files.value,
+                upload = uploadState.value,
                 error = error,
                 filter = call.scheduleFilter,
                 filesLoaded = googleService.filesLoaded.value,
@@ -141,12 +163,14 @@ fun Routing.schedulePage(
     }
 
     sse("/api/schedule/events") {
+        heartbeat { period = 15.seconds }
         googleService.scheduleUpdates
             .onStart { emit(googleService.files.value) }
-            .collectLatest { files ->
+            .combine(uploadState) { files, upload -> files to upload }
+            .collect { (files, upload) ->
                 send(
                     data = Json.encodeToString(
-                        scheduleView(files, filter = call.scheduleFilter, filesLoaded = googleService.filesLoaded.value, googleWaitMessage = googleService.googleWaitMessage.value, validationProgress = googleService.processingProgress)
+                        scheduleView(files, upload = upload, filter = call.scheduleFilter, filesLoaded = googleService.filesLoaded.value, googleWaitMessage = googleService.googleWaitMessage.value, validationProgress = googleService.processingProgress)
                     ),
                     event = "schedule"
                 )
@@ -164,6 +188,10 @@ fun Routing.schedulePage(
     }
 
     post("/api/schedule/approve") {
+        if (uploadState.value.running) {
+            call.respond(HttpStatusCode.Conflict, mapOf("error" to "Дождитесь загрузки файлов"))
+            return@post
+        }
         if (approvalState.value.status != ScheduleApprovalStatus.IDLE &&
             approvalState.value.status != ScheduleApprovalStatus.ERROR
         ) {
@@ -187,6 +215,7 @@ fun Routing.schedulePage(
     }
 
     sse("/api/schedule/approve/events") {
+        heartbeat { period = 15.seconds }
         approvalState.collect { state ->
             send(data = Json.encodeToString(state), event = "approval")
         }

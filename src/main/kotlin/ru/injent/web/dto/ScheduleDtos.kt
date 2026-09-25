@@ -29,6 +29,7 @@ data class FileView(
 @Serializable
 data class ScheduleView(
     val files: List<FileView>,
+    val upload: ScheduleUploadState = ScheduleUploadState(),
     val hasUnreadyFiles: Boolean,
     val canOpenScheduleApproval: Boolean,
     val error: String? = null,
@@ -40,6 +41,7 @@ data class ScheduleView(
 
 fun scheduleView(
     files: List<SheetsFile>,
+    upload: ScheduleUploadState = ScheduleUploadState(),
     error: String? = null,
     filter: String = FILTER_ALL,
     filesLoaded: Boolean = true,
@@ -53,9 +55,10 @@ fun scheduleView(
     val hasDuplicateGroups = activeFiles.any { file -> file.conflictGroups.isNotEmpty() }
 
     return ScheduleView(
+        upload = upload,
         files = files.filterByScheduleFilter(filter).map(SheetsFile::toView),
         hasUnreadyFiles = hasActiveFileErrors || hasDuplicateGroups,
-        canOpenScheduleApproval = filesLoaded && !hasActiveFileErrors,
+        canOpenScheduleApproval = filesLoaded && !upload.running && !hasActiveFileErrors,
         error = error,
         filter = filter.normalizeScheduleFilter(),
         filesLoaded = filesLoaded,
@@ -158,3 +161,6 @@ data class CompassApiResponse(
     val status: io.ktor.http.HttpStatusCode,
     val body: String,
 )
+
+@Serializable
+data class ScheduleUploadState(val running: Boolean = false, val error: String? = null)
