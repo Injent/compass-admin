@@ -42,7 +42,9 @@ button, input { font: inherit; }
 .warning { color: var(--md-sys-color-error); }
 .snackbar { position: fixed; z-index: 20; right: 24px; bottom: 24px; max-width: 420px; padding: 14px 18px; border-radius: 12px; color: white; background: #303030; box-shadow: 0 8px 24px rgb(0 0 0 / 25%); }
 .snackbar.success { background: #216e39; }
-.snackbar.error { background: var(--md-sys-color-error); }
+.snackbar.error { background: var(--md-sys-color-error); padding-right: 60px; }
+.snackbar-close { position: absolute; top: 2px; right: 2px; color: inherit; }
+.app-version { width: 64px; margin: 0 16px 8px; text-align: center; font-size: 11px; color: var(--md-sys-color-on-surface-variant); }
 .config-content { overflow: auto; }
 .config-form { width: min(1080px, 100%); margin: 0 auto; padding: 8px 0 32px; }
 .config-form > m3e-heading { margin-top: 12px; }

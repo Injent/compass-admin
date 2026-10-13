@@ -7,6 +7,7 @@ import GuidePage from './pages/GuidePage.vue'
 
 const route = ref(location.pathname)
 const canAccessConfig = Boolean(window.__APP_CONFIG__?.canAccessConfig)
+const appVersion = window.__APP_CONFIG__?.appVersion
 const sheetsQuota = ref(null)
 let quotaEvents
 let quotaResetTimer
@@ -73,6 +74,7 @@ onBeforeUnmount(() => {
           </m3e-nav-item>
         </m3e-nav-rail>
         <div class="nav-column-spacer" />
+        <span v-if="canAccessConfig && appVersion" class="app-version">v{{ appVersion }}</span>
         <div v-if="canAccessConfig" class="sheets-quota" :title="quotaTitle">
           <m3e-circular-progress-indicator
             :value="sheetsQuota?.remainingPercent ?? 0" :indeterminate="!sheetsQuota"

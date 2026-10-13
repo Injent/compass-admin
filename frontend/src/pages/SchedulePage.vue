@@ -335,6 +335,9 @@ onBeforeUnmount(() => { clearTimeout(hideProcessingTimer); events?.close(); appr
     </dialog>
 
     <div v-if="approval.status !== 'IDLE'" class="snackbar" :class="approval.status.toLowerCase()">
+      <m3e-icon-button v-if="approval.status === 'ERROR'" class="snackbar-close" aria-label="Закрыть уведомление об ошибке" @click="approval = { status: 'IDLE', progress: 0 }">
+        <m3e-icon name="close" />
+      </m3e-icon-button>
       {{ approval.message || (approval.status === 'SUCCESS' ? 'Расписание отправлено' : 'Отправка расписания') }}
     </div>
   </div>

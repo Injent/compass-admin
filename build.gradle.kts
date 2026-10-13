@@ -12,6 +12,13 @@ plugins {
 group = "ru.injent"
 version = "1"
 
+tasks.processResources {
+    inputs.property("appVersion", project.version.toString())
+    filesMatching("app-version.properties") {
+        expand("appVersion" to project.version.toString())
+    }
+}
+
 application {
     mainClass = "io.ktor.server.netty.EngineMain"
 }

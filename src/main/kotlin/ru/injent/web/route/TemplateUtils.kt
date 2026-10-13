@@ -10,6 +10,11 @@ import ru.injent.service.auth.AuthService
 import ru.injent.service.config.Access
 import ru.injent.web.dto.normalizeScheduleFilter
 import java.io.StringWriter
+import java.util.Properties
+
+private val appVersion = Properties().apply {
+    requireNotNull(AuthService::class.java.getResourceAsStream("/app-version.properties")).use { load(it) }
+}.getProperty("version")
 
 /**
  * Рендерит Freemarker шаблон по имени и контекстной модели.
@@ -30,6 +35,7 @@ fun indexModel(call: ApplicationCall): Map<String, Any> =
         mapOf(
             "initialContentUrl" to call.initialContentUrl(canAccessConfig),
             "canAccessConfig" to canAccessConfig,
+            "appVersion" to if (canAccessConfig) appVersion else "",
         )
     }
 
