@@ -72,6 +72,7 @@ suspend fun sendApprovedScheduleFiles(
     httpClient: HttpClient,
     approvalState: MutableStateFlow<ScheduleApprovalState>,
     logger: Logger,
+    sendAllFiles: Boolean = false,
 ) {
     try {
         logger.info("Schedule submission started")
@@ -91,17 +92,17 @@ suspend fun sendApprovedScheduleFiles(
             "Все файлы должны быть проверены без ошибок"
         }
         val groupsToRemove = googleService.groupsToRemove()
-        val changedFiles = files.filter(SheetsFile::hasChanges)
+        val filesToSend = if (sendAllFiles) files else files.filter(SheetsFile::hasChanges)
 
         approvalState.value = ScheduleApprovalState.running(10)
 
         var scheduleResponse: CompassApiResponse? = null
-        if (changedFiles.isNotEmpty()) {
+        if (filesToSend.isNotEmpty()) {
             scheduleResponse = sendScheduleWithRetry(
                 googleService = googleService,
                 appConfig = appConfig,
                 httpClient = httpClient,
-                files = changedFiles,
+                files = filesToSend,
                 logger = logger,
             )
         }
@@ -117,22 +118,22 @@ suspend fun sendApprovedScheduleFiles(
             googleService.deleteSyncedGroups(groupsToRemove)
         }
 
-        googleService.markScheduleApproved(changedFiles, files.mapTo(mutableSetOf(), SheetsFile::fileId))
+        googleService.markScheduleApproved(filesToSend, files.mapTo(mutableSetOf(), SheetsFile::fileId))
 
         val removedGroupsText = groupsToRemove
             .takeIf(List<String>::isNotEmpty)
             ?.joinToString(", ")
             ?: "нет"
         logger.info(
-            "Schedule submission completed: filesSent=${changedFiles.size}, " +
+            "Schedule submission completed: filesSent=${filesToSend.size}, " +
                 "removedGroups=$removedGroupsText, " +
-                "uploadNewSchedules=${scheduleResponse?.toLogText() ?: "not requested (no changed files)"}, " +
+                "uploadNewSchedules=${scheduleResponse?.toLogText() ?: "not requested (no files to send)"}, " +
                 "removeGroups=${removedGroupsResponse?.toLogText() ?: "not requested"}"
         )
         approvalState.value = ScheduleApprovalState(
             status = ScheduleApprovalStatus.SUCCESS,
             progress = 100,
-            message = if (changedFiles.isEmpty() && groupsToRemove.isEmpty()) "Нет изменений для отправки" else "Расписание отправлено: файлов ${changedFiles.size}"
+            message = if (filesToSend.isEmpty() && groupsToRemove.isEmpty()) "Нет изменений для отправки" else "Расписание отправлено: файлов ${filesToSend.size}"
         )
     } catch (error: CancellationException) {
         throw error

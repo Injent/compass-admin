@@ -20,6 +20,8 @@ const selected = ref(new Set())
 const activeFileId = ref(null)
 const fileInput = ref()
 const approvalDialog = ref()
+const showAdvancedApproval = ref(false)
+const sendAllFiles = ref(false)
 const downloadDialog = ref()
 const approval = ref({ status: 'IDLE', progress: 0, message: '' })
 const approvalPercent = computed(() => {
@@ -176,6 +178,8 @@ function downloadAll() {
 }
 async function openApproval() {
   error.value = ''
+  showAdvancedApproval.value = false
+  sendAllFiles.value = false
   preview.value = { groupsToRemove: [], duplicateGroups: [] }
   approvalDialog.value.showModal()
   try {
@@ -185,8 +189,9 @@ async function openApproval() {
   }
 }
 async function approveSchedule() {
+  approvalDialog.value.close()
   try {
-    await api('/api/schedule/approve', { method: 'POST' })
+    await api(`/api/schedule/approve?sendAllFiles=${sendAllFiles.value}`, { method: 'POST' })
   } catch (cause) {
     error.value = cause.message
   }
@@ -314,9 +319,14 @@ onBeforeUnmount(() => { clearTimeout(hideProcessingTimer); events?.close(); appr
         <p>Файлы отправляются: {{ approvalPercent }}%. Страницу можно закрыть.</p>
       </template>
       <template v-else>
-        <p>На сервер будут отправлены только новые и изменённые файлы. Удалённые группы будут убраны из расписания.</p>
+        <p>На сервер будут отправлены {{ sendAllFiles ? 'все файлы' : 'только новые и изменённые файлы' }}. Удалённые группы будут убраны из расписания.</p>
         <p v-if="preview.groupsToRemove.length" class="warning">Будут удалены группы: {{ preview.groupsToRemove.join(', ') }}</p>
         <p v-if="preview.duplicateGroups.length" class="warning">Дублируются группы: {{ preview.duplicateGroups.join(', ') }}</p>
+        <label v-if="showAdvancedApproval" class="approval-all-files">
+          <input v-model="sendAllFiles" type="checkbox" />
+          Отправить все файлы
+        </label>
+        <button v-else type="button" class="approval-advanced" @click="showAdvancedApproval = true">Расширенные настройки</button>
       </template>
       <div class="dialog-actions">
         <m3e-button @click="approvalDialog.close()">Закрыть</m3e-button>
@@ -329,3 +339,22 @@ onBeforeUnmount(() => { clearTimeout(hideProcessingTimer); events?.close(); appr
     </div>
   </div>
 </template>
+
+<style scoped>
+.approval-advanced {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--md-sys-color-primary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.approval-all-files {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+</style>

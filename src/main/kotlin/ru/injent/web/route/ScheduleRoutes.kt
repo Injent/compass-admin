@@ -199,10 +199,11 @@ fun Routing.schedulePage(
             return@post
         }
 
+        val sendAllFiles = call.request.queryParameters["sendAllFiles"] == "true"
         approvalState.value = ScheduleApprovalState(ScheduleApprovalStatus.RUNNING, 0, "Файлы отправляются")
         applicationScope.launch {
             googleService.withScheduleOperation {
-                sendApprovedScheduleFiles(googleService, appConfig, httpClient, approvalState, logger)
+                sendApprovedScheduleFiles(googleService, appConfig, httpClient, approvalState, logger, sendAllFiles)
             }
             if (approvalState.value.status == ScheduleApprovalStatus.SUCCESS) {
                 delay(5.seconds)
