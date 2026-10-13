@@ -164,7 +164,9 @@ private suspend fun sendScheduleWithRetry(
             val response = httpClient.post(appConfig.compassApiConfig.approveScheduleUrl()) {
                 header(HttpHeaders.Authorization, "Bearer ${appConfig.compassApiConfig.apiKey}")
                 timeout {
-                    requestTimeoutMillis = 60_000
+                    // Сервер обрабатывает расписание до 15 минут; оставляем запас на передачу файлов.
+                    requestTimeoutMillis = 20.minutes.inWholeMilliseconds
+                    socketTimeoutMillis = 20.minutes.inWholeMilliseconds
                     connectTimeoutMillis = 10_000
                 }
                 setBody(
