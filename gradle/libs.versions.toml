@@ -13,6 +13,7 @@ sqliteJdbc = "3.50.3.0"
 shadow = "9.5.1"
 
 [libraries]
+apache-poi = { module = "org.apache.poi:poi-ooxml", version = "5.5.1" }
 koin-ktor = { module = "io.insert-koin:koin-ktor", version.ref = "koin" }
 koin-loggerSlf4j = { module = "io.insert-koin:koin-logger-slf4j", version.ref = "koin" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }

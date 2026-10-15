@@ -40,6 +40,7 @@ fun indexModel(call: ApplicationCall): Map<String, Any> =
     }
 
 private fun ApplicationCall.initialContentUrl(canAccessConfig: Boolean): String {
+    if (request.path() == "/sheetdiff") return "/sheetdiff"
     if (request.path().startsWith("/teachers")) {
         return "/teachers"
     }

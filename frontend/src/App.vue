@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import SheetDiffPage from './pages/SheetDiffPage.vue'
 import SchedulePage from './pages/SchedulePage.vue'
 import TeachersPage from './pages/TeachersPage.vue'
 import ConfigPage from './pages/ConfigPage.vue'
@@ -16,6 +17,7 @@ const quotaTitle = computed(() => sheetsQuota.value
   : 'Загрузка лимита Google Sheets')
 const routes = [
   { path: '/schedule', label: 'Расписание', icon: 'calendar_today', component: SchedulePage },
+  { path: '/sheetdiff', label: 'Сравнение', icon: 'difference', component: SheetDiffPage },
   { path: '/teachers', label: 'Преподаватели', icon: 'co_present', component: TeachersPage },
   ...(canAccessConfig ? [{ path: '/config', label: 'Конфиг', icon: 'call_merge', component: ConfigPage }] : []),
 ]

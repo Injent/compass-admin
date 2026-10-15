@@ -58,6 +58,7 @@ fun Routing.schedulePage(
     applicationScope: CoroutineScope,
     logger: Logger,
 ) {
+    sheetDiffPage(googleService)
     val uploadState = MutableStateFlow(ScheduleUploadState())
     val approvalState = MutableStateFlow(ScheduleApprovalState.idle())
 

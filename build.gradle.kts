@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "ru.injent"
-version = "1"
+version = "2"
 
 tasks.processResources {
     inputs.property("appVersion", project.version.toString())
@@ -91,6 +91,7 @@ tasks.named("jib") {
 }
 
 dependencies {
+    implementation(libs.apache.poi)
     implementation(libs.kotlinx.datetime)
     implementation(ktorLibs.serialization.kotlinx.json)
     implementation(ktorLibs.server.auth)
