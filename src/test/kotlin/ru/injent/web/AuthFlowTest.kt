@@ -30,6 +30,9 @@ class AuthFlowTest {
             routing {
                 authPage(auth)
                 get("/profkom") { call.respondText("profkom") }
+                listOf("/schedule", "/sheetdiff", "/teachers", "/api/teachers", "/api/config", "/guide").forEach { path ->
+                    get(path) { call.respondText("other section") }
+                }
                 get("/api/profkom") { call.respondText("settings") }
                 put("/api/profkom") { call.respondText("saved") }
             }
@@ -44,6 +47,15 @@ class AuthFlowTest {
             assertEquals(expected, browser.get("/profkom") { header(HttpHeaders.Cookie, cookie) }.status)
             assertEquals(expected, browser.get("/api/profkom") { header(HttpHeaders.Cookie, cookie) }.status)
             assertEquals(expected, browser.put("/api/profkom") { header(HttpHeaders.Cookie, cookie) }.status)
+            for (path in listOf("/schedule", "/sheetdiff", "/teachers", "/api/teachers", "/api/config", "/guide")) {
+                val sectionStatus = if (role == Access.Role.PROFKOM) HttpStatusCode.Forbidden else HttpStatusCode.OK
+                assertEquals(sectionStatus, browser.get(path) { header(HttpHeaders.Cookie, cookie) }.status)
+            }
+            if (role == Access.Role.PROFKOM) {
+                val root = browser.get("/") { header(HttpHeaders.Cookie, cookie) }
+                assertEquals(HttpStatusCode.Found, root.status)
+                assertEquals("/profkom", root.headers[HttpHeaders.Location])
+            }
         }
     }
 

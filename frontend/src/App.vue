@@ -22,10 +22,13 @@ let quotaResetTimer
 const quotaTitle = computed(() => sheetsQuota.value
   ? `Google Sheets: осталось ${sheetsQuota.value.remainingPercent}% · использовано ${sheetsQuota.value.usedRequests} из 60 запросов`
   : 'Загрузка лимита Google Sheets')
+const profkomOnly = canAccessProfkom && !canAccessConfig
 const routes = [
+  ...(!profkomOnly ? [
   { path: '/schedule', label: 'Расписание', icon: 'calendar_today', component: SchedulePage },
   { path: '/sheetdiff', label: 'Сравнение', icon: 'difference', component: SheetDiffPage },
   { path: '/teachers', label: 'Преподаватели', icon: 'co_present', component: TeachersPage },
+  ] : []),
   ...(canAccessProfkom ? [{ path: '/profkom', label: 'Профком', icon: 'diversity_1', component: ProfkomPage }] : []),
   ...(canAccessConfig ? [{ path: '/config', label: 'Конфиг', icon: 'call_merge', component: ConfigPage }] : []),
 ]
@@ -58,7 +61,7 @@ async function logout(event) {
   if (await canLeave()) event.target.submit()
 }
 onMounted(() => {
-  if (location.pathname === '/') navigate('/schedule')
+  if (location.pathname === '/') navigate(routes[0].path)
   addEventListener('popstate', onPopState)
   if (canAccessConfig && route.value !== '/guide') {
     quotaEvents = new EventSource('/api/google-sheets/quota/events')

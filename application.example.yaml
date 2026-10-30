@@ -20,3 +20,6 @@ access:
   - role: "USER"
     login: "user"
     password: "${USER_PASSWORD}"
+  - role: "PROFKOM"
+    login: "profkom"
+    password: "${PROFKOM_PASSWORD}"

@@ -49,6 +49,19 @@ fun Application.installAuthGuard(authService: AuthService, googleCallbackApiKey:
             return@intercept
         }
 
+        if (user.role == Access.Role.PROFKOM) {
+            if (path == "/") {
+                call.respondRedirect("/profkom")
+                finish()
+                return@intercept
+            }
+            if (path != "/profkom" && path != "/api/profkom" && path != "/auth/logout") {
+                call.respond(HttpStatusCode.Forbidden)
+                finish()
+                return@intercept
+            }
+        }
+
         if (((path == "/profkom" || path == "/api/profkom" || path.startsWith("/api/profkom/")) && user.role !in setOf(Access.Role.PROFKOM, Access.Role.SUPERUSER)) ||
             ((path.startsWith("/config") || path == "/api/google-sheets/quota/events") && user.role != Access.Role.SUPERUSER)) {
             call.respond(HttpStatusCode.Forbidden)
