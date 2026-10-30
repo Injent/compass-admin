@@ -20,7 +20,7 @@ import kotlin.test.*
 
 class AuthFlowTest {
     @Test
-    fun `profkom and administrator roles can access profkom page and API`() = testApplication {
+    fun `finSupport and administrator roles can access finSupport page and API`() = testApplication {
         application {
             val auth = AuthService(AppConfig(
                 GigaChatConfig("", "", 0, ""), CompassApiConfig("", ""),
@@ -29,12 +29,12 @@ class AuthFlowTest {
             installAuthGuard(auth, "test-key")
             routing {
                 authPage(auth)
-                get("/finsupport") { call.respondText("profkom") }
+                get("/finsupport") { call.respondText("finSupport") }
                 listOf("/schedule", "/sheetdiff", "/teachers", "/api/teachers", "/api/config", "/guide").forEach { path ->
                     get(path) { call.respondText("other section") }
                 }
-                get("/api/profkom") { call.respondText("settings") }
-                put("/api/profkom") { call.respondText("saved") }
+                get("/api/finsupport") { call.respondText("settings") }
+                put("/api/finsupport") { call.respondText("saved") }
             }
         }
         val browser = createClient { followRedirects = false }
@@ -47,8 +47,8 @@ class AuthFlowTest {
             val cookie = login.headers[HttpHeaders.SetCookie]!!.substringBefore(';')
             val expected = if (role in setOf(Access.Role.PROFKOM, Access.Role.SUPERUSER)) HttpStatusCode.OK else HttpStatusCode.Forbidden
             assertEquals(expected, browser.get("/finsupport") { header(HttpHeaders.Cookie, cookie) }.status)
-            assertEquals(expected, browser.get("/api/profkom") { header(HttpHeaders.Cookie, cookie) }.status)
-            assertEquals(expected, browser.put("/api/profkom") { header(HttpHeaders.Cookie, cookie) }.status)
+            assertEquals(expected, browser.get("/api/finsupport") { header(HttpHeaders.Cookie, cookie) }.status)
+            assertEquals(expected, browser.put("/api/finsupport") { header(HttpHeaders.Cookie, cookie) }.status)
             for (path in listOf("/schedule", "/sheetdiff", "/teachers", "/api/teachers", "/api/config", "/guide")) {
                 val sectionStatus = if (role == Access.Role.PROFKOM) HttpStatusCode.Forbidden else HttpStatusCode.OK
                 assertEquals(sectionStatus, browser.get(path) { header(HttpHeaders.Cookie, cookie) }.status)

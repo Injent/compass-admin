@@ -8,7 +8,7 @@ import org.koin.dsl.module
 import org.koin.dsl.onClose
 import ru.injent.service.ScheduleChangeTracker
 import ru.injent.service.ScheduleGroupService
-import ru.injent.service.config.ProfkomSettingsService
+import ru.injent.service.config.FinSupportSettingsService
 import ru.injent.service.config.ServerSettingsStore
 
 /**
@@ -24,7 +24,7 @@ val databaseModule = module {
     singleOf(::ScheduleGroupService)
     singleOf(::ScheduleChangeTracker)
     single { ServerSettingsStore(get()) } onClose { it?.close() }
-    single { ProfkomSettingsService(get<ServerSettingsStore>().preferences) }
+    single { FinSupportSettingsService(get<ServerSettingsStore>().preferences) }
 }
 
 private fun initializeDatabase(database: Database) {

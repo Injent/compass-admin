@@ -36,7 +36,7 @@ fun indexModel(call: ApplicationCall): Map<String, Any> =
         mapOf(
             "initialContentUrl" to call.initialContentUrl(canAccessConfig),
             "canAccessConfig" to canAccessConfig,
-            "canAccessProfkom" to (role == Access.Role.PROFKOM || canAccessConfig),
+            "canAccessFinSupport" to (role == Access.Role.PROFKOM || canAccessConfig),
             "appVersion" to if (canAccessConfig) appVersion else "",
         )
     }

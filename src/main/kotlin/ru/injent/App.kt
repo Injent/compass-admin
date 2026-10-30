@@ -32,7 +32,7 @@ import ru.injent.database.databaseModule
 import ru.injent.service.auth.AuthService
 import ru.injent.service.config.AppConfig
 import ru.injent.service.config.RemoteConfigService
-import ru.injent.service.config.ProfkomSettingsService
+import ru.injent.service.config.FinSupportSettingsService
 import ru.injent.service.google.GoogleWorkspaceService
 import ru.injent.service.google.googleModule
 import ru.injent.service.teacher.TeacherService
@@ -162,7 +162,7 @@ fun Application.configureApp() {
         schedulePage(googleService, wordCorrectionService, sheetValidators, appConfig, httpClient, this@configureApp, log)
         teachersPage(teacherService)
         configPage(remoteConfigService)
-        profkomPage(get<ProfkomSettingsService>())
+        finSupportPage(get<FinSupportSettingsService>())
         editorPage(googleService)
         googleSheetsCallbackPage(googleService, sheetValidators, this@configureApp)
     }

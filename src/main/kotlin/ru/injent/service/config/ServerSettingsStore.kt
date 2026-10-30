@@ -17,21 +17,22 @@ import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import ru.injent.database.ServerSettingsTable
 import java.io.File
 
-internal val profkomSettingsKey = stringPreferencesKey("profkom")
+// Keep the persisted key compatible with existing settings.
+internal val finSupportSettingsKey = stringPreferencesKey("profkom")
 
 class ServerSettingsStore(database: Database, file: File = File("data/prefs.preferences_pb")) : AutoCloseable {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val preferences = PreferenceDataStoreFactory.create(
         scope = scope,
         migrations = listOf(object : DataMigration<Preferences> {
-            override suspend fun shouldMigrate(currentData: Preferences) = currentData[profkomSettingsKey] == null
+            override suspend fun shouldMigrate(currentData: Preferences) = currentData[finSupportSettingsKey] == null
             override suspend fun migrate(currentData: Preferences): Preferences {
                 val legacy = transaction(database) {
                     ServerSettingsTable.selectAll().where { ServerSettingsTable.key eq "profkom" }
                         .singleOrNull()?.get(ServerSettingsTable.value)
                 }
                 return currentData.toMutablePreferences().apply {
-                    if (legacy != null) this[profkomSettingsKey] = legacy
+                    if (legacy != null) this[finSupportSettingsKey] = legacy
                 }
             }
             override suspend fun cleanUp() = Unit

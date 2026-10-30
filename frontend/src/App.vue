@@ -5,7 +5,7 @@ import SchedulePage from './pages/SchedulePage.vue'
 import TeachersPage from './pages/TeachersPage.vue'
 import ConfigPage from './pages/ConfigPage.vue'
 import GuidePage from './pages/GuidePage.vue'
-import ProfkomPage from './pages/ProfkomPage.vue'
+import FinSupportPage from './pages/FinSupportPage.vue'
 
 const route = ref(location.pathname)
 const page = ref(null)
@@ -14,7 +14,7 @@ let restoringHistory = false
 let leaving = false
 history.replaceState({ ...history.state, compassIndex: historyIndex }, '', location.href)
 const canAccessConfig = Boolean(window.__APP_CONFIG__?.canAccessConfig)
-const canAccessProfkom = Boolean(window.__APP_CONFIG__?.canAccessProfkom)
+const canAccessFinSupport = Boolean(window.__APP_CONFIG__?.canAccessFinSupport)
 const appVersion = window.__APP_CONFIG__?.appVersion
 const sheetsQuota = ref(null)
 let quotaEvents
@@ -22,14 +22,14 @@ let quotaResetTimer
 const quotaTitle = computed(() => sheetsQuota.value
   ? `Google Sheets: осталось ${sheetsQuota.value.remainingPercent}% · использовано ${sheetsQuota.value.usedRequests} из 60 запросов`
   : 'Загрузка лимита Google Sheets')
-const profkomOnly = canAccessProfkom && !canAccessConfig
+const finSupportOnly = canAccessFinSupport && !canAccessConfig
 const routes = [
-  ...(!profkomOnly ? [
+  ...(!finSupportOnly ? [
   { path: '/schedule', label: 'Расписание', icon: 'calendar_today', component: SchedulePage },
   { path: '/sheetdiff', label: 'Сравнение', icon: 'difference', component: SheetDiffPage },
   { path: '/teachers', label: 'Преподаватели', icon: 'co_present', component: TeachersPage },
   ] : []),
-  ...(canAccessProfkom ? [{ path: '/finsupport', label: 'Материалка', icon: 'volunteer_activism', component: ProfkomPage }] : []),
+  ...(canAccessFinSupport ? [{ path: '/finsupport', label: 'Материалка', icon: 'volunteer_activism', component: FinSupportPage }] : []),
   ...(canAccessConfig ? [{ path: '/config', label: 'Конфиг', icon: 'call_merge', component: ConfigPage }] : []),
 ]
 const activeRoute = computed(() => routes.find(item => route.value.startsWith(item.path)) || routes[0])

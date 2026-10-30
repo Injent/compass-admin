@@ -15,14 +15,14 @@ import java.time.Instant
 import java.time.ZoneId
 import kotlin.test.*
 
-class ProfkomSettingsServiceTest {
+class FinSupportSettingsServiceTest {
     @Test
     fun `API serialization includes all default fields without omitted override parameters`() {
         val encoded = Json.parseToJsonElement(Json.encodeToString(settings(mapOf("2026-10" to ScheduleOverride(enabled = false)))))
             .jsonObject.getValue("schedules").jsonObject.getValue("materialAid").jsonObject
         assertEquals(setOf("enabled", "dayRange", "hours", "months"), encoded.getValue("default").jsonObject.keys)
         assertEquals(setOf("enabled"), encoded.getValue("overrides").jsonObject.getValue("2026-10").jsonObject.keys)
-        assertTrue("overrides" in Json.parseToJsonElement(Json.encodeToString(ProfkomSettings())).jsonObject
+        assertTrue("overrides" in Json.parseToJsonElement(Json.encodeToString(FinSupportSettings())).jsonObject
             .getValue("schedules").jsonObject.getValue("materialAid").jsonObject)
     }
 
@@ -34,7 +34,7 @@ class ProfkomSettingsServiceTest {
                 it[value] = """{"schedules":{"materialAid":{"default":{"hours":{"from":"09:00","to":"18:00"}},"overrides":{"2026-10":{"hours":{"from":"11:00","to":"16:00"}}}}}}"""
             }
         }
-        val service = ProfkomSettingsService(store.preferences, clock("2026-10-20"))
+        val service = FinSupportSettingsService(store.preferences, clock("2026-10-20"))
         val loaded = service.get()
         assertEquals(7, loaded.schedules.materialAid.default.hours.days.size)
         assertTrue(loaded.schedules.materialAid.default.hours.days.values.all { it.from == "09:00" && it.to == "18:00" })
@@ -43,7 +43,7 @@ class ProfkomSettingsServiceTest {
         val days = loaded.schedules.materialAid.default.hours.days + ("sunday" to WorkDay(false, "00:00", "00:00"))
         val defaults = loaded.schedules.materialAid.default.copy(hours = ScheduleHours(days = days), months = listOf(1, 5, 12))
         val result = service.update(settings(emptyMap(), defaults))
-        assertEquals(result, ProfkomSettingsService(store.preferences, clock("2026-10-20")).get())
+        assertEquals(result, FinSupportSettingsService(store.preferences, clock("2026-10-20")).get())
         assertEquals(listOf(1, 5, 12), result.schedules.materialAid.default.months)
         assertFalse(result.schedules.materialAid.default.hours.days.getValue("sunday").enabled)
         for (invalid in listOf(
@@ -56,21 +56,21 @@ class ProfkomSettingsServiceTest {
 
     @Test
     fun `preferences survive store restart and do not import stale sqlite settings again`() = withDatabase { database ->
-        val file = Files.createTempDirectory("profkom-restart-").resolve("data/server.preferences_pb").toFile()
+        val file = Files.createTempDirectory("finsupport-restart-").resolve("data/server.preferences_pb").toFile()
         var localStore = ServerSettingsStore(database, file)
         try {
-            val service = ProfkomSettingsService(localStore.preferences, clock("2026-10-20"))
+            val service = FinSupportSettingsService(localStore.preferences, clock("2026-10-20"))
             val saved = service.update(settings(emptyMap(), ScheduleDefaults(months = listOf(2, 10))))
             assertTrue(file.isFile)
             transaction(database) {
                 ServerSettingsTable.upsert {
                     it[key] = "profkom"
-                    it[value] = Json.encodeToString(ProfkomSettings())
+                    it[value] = Json.encodeToString(FinSupportSettings())
                 }
             }
             localStore.close()
             localStore = ServerSettingsStore(database, file)
-            assertEquals(saved, ProfkomSettingsService(localStore.preferences, clock("2026-10-20")).get())
+            assertEquals(saved, FinSupportSettingsService(localStore.preferences, clock("2026-10-20")).get())
         } finally {
             localStore.close()
             file.parentFile.parentFile.deleteRecursively()
@@ -80,12 +80,12 @@ class ProfkomSettingsServiceTest {
     private val zone = ZoneId.of("Europe/Moscow")
     private fun clock(date: String) = Clock.fixed(Instant.parse("${date}T09:00:00Z"), zone)
     private fun settings(overrides: Map<String, ScheduleOverride>, defaults: ScheduleDefaults = ScheduleDefaults()) =
-        ProfkomSettings(ProfkomSchedules(MaterialAidSchedule(defaults, overrides)))
+        FinSupportSettings(FinSupportSchedules(MaterialAidSchedule(defaults, overrides)))
 
     private lateinit var store: ServerSettingsStore
 
     private fun withDatabase(test: suspend (Database) -> Unit) = runBlocking {
-        val directory = Files.createTempDirectory("profkom-")
+        val directory = Files.createTempDirectory("finsupport-")
         val path = directory.resolve("legacy.db")
         try {
             val database = Database.connect("jdbc:sqlite:$path", driver = "org.sqlite.JDBC")
@@ -100,11 +100,11 @@ class ProfkomSettingsServiceTest {
 
     @Test
     fun `partial override persists locally and creation date survives replacement`() = withDatabase { database ->
-        val service = ProfkomSettingsService(store.preferences, clock("2026-10-20"))
-        assertEquals(ProfkomSettings(), service.get())
+        val service = FinSupportSettingsService(store.preferences, clock("2026-10-20"))
+        assertEquals(FinSupportSettings(), service.get())
         val saved = service.update(settings(mapOf("2026-10" to ScheduleOverride(enabled = false))))
         assertEquals("2026-10-20", saved.schedules.materialAid.overrides.getValue("2026-10").createdAt)
-        val restarted = ProfkomSettingsService(store.preferences, clock("2026-10-25"))
+        val restarted = FinSupportSettingsService(store.preferences, clock("2026-10-25"))
         assertEquals(saved, restarted.get())
         val updated = restarted.update(settings(mapOf("2026-10" to ScheduleOverride(dayRange = DayRange(1, 20), createdAt = "2099-01-01"))))
         val override = updated.schedules.materialAid.overrides.getValue("2026-10")
@@ -120,12 +120,12 @@ class ProfkomSettingsServiceTest {
 
     @Test
     fun `expired overrides remain on reads and are pruned only after more than three months`() = withDatabase { database ->
-        ProfkomSettingsService(store.preferences, clock("2026-07-20"))
+        FinSupportSettingsService(store.preferences, clock("2026-07-20"))
             .update(settings(mapOf("2026-07" to ScheduleOverride(enabled = false))))
-        val boundary = ProfkomSettingsService(store.preferences, clock("2026-10-20"))
+        val boundary = FinSupportSettingsService(store.preferences, clock("2026-10-20"))
         val atBoundary = boundary.update(boundary.get())
         assertTrue("2026-07" in atBoundary.schedules.materialAid.overrides)
-        val later = ProfkomSettingsService(store.preferences, clock("2026-10-21"))
+        val later = FinSupportSettingsService(store.preferences, clock("2026-10-21"))
         assertTrue("2026-07" in later.get().schedules.materialAid.overrides)
         assertTrue(later.update(later.get()).schedules.materialAid.overrides.isEmpty())
     }
@@ -138,13 +138,13 @@ class ProfkomSettingsServiceTest {
                 it[value] = Json.encodeToString(settings(mapOf("2026-01" to ScheduleOverride(enabled = false))))
             }
         }
-        val service = ProfkomSettingsService(store.preferences, clock("2026-10-20"))
+        val service = FinSupportSettingsService(store.preferences, clock("2026-10-20"))
         assertTrue(service.update(service.get()).schedules.materialAid.overrides.isEmpty())
     }
 
     @Test
     fun `invalid ranges hours and edits outside current month do not overwrite settings`() = withDatabase { database ->
-        val service = ProfkomSettingsService(store.preferences, clock("2026-02-20"))
+        val service = FinSupportSettingsService(store.preferences, clock("2026-02-20"))
         val invalid = listOf(
             settings(mapOf("2026-02" to ScheduleOverride(dayRange = DayRange(1, 29)))),
             settings(mapOf("2026-02" to ScheduleOverride(dayRange = DayRange(10, 1)))),
@@ -156,6 +156,6 @@ class ProfkomSettingsServiceTest {
             settings(emptyMap(), ScheduleDefaults(dayRange = DayRange(0, 32))),
         )
         invalid.forEach { assertFailsWith<IllegalArgumentException> { service.update(it) } }
-        assertEquals(ProfkomSettings(), service.get())
+        assertEquals(FinSupportSettings(), service.get())
     }
 }

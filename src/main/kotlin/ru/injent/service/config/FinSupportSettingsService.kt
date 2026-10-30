@@ -13,10 +13,10 @@ import java.time.YearMonth
 import java.time.ZoneId
 
 @Serializable
-data class ProfkomSettings(@EncodeDefault val schedules: ProfkomSchedules = ProfkomSchedules())
+data class FinSupportSettings(@EncodeDefault val schedules: FinSupportSchedules = FinSupportSchedules())
 
 @Serializable
-data class ProfkomSchedules(@EncodeDefault val materialAid: MaterialAidSchedule = MaterialAidSchedule())
+data class FinSupportSchedules(@EncodeDefault val materialAid: MaterialAidSchedule = MaterialAidSchedule())
 
 @Serializable
 data class MaterialAidSchedule(
@@ -55,15 +55,15 @@ data class ScheduleOverride(
     val createdAt: String? = null,
 )
 
-class ProfkomSettingsService(
+class FinSupportSettingsService(
     private val store: DataStore<Preferences>,
     private val clock: Clock = Clock.system(ZoneId.of("Europe/Moscow")),
 ) {
     private val json = Json { encodeDefaults = true; explicitNulls = false }
 
-    suspend fun get(): ProfkomSettings = read(store.data.first())
+    suspend fun get(): FinSupportSettings = read(store.data.first())
 
-    suspend fun update(settings: ProfkomSettings): ProfkomSettings {
+    suspend fun update(settings: FinSupportSettings): FinSupportSettings {
         val preferences = store.edit { preferences ->
             val schedule = normalize(settings).schedules.materialAid
             val existing = read(preferences).schedules.materialAid.overrides
@@ -88,15 +88,15 @@ class ProfkomSettingsService(
                 // Existing entries without metadata use their month as the creation date.
                 override.copy(createdAt = old?.createdAt ?: if (old != null) yearMonth.atDay(1).toString() else today.toString())
             }.filterValues { !LocalDate.parse(it.createdAt).isBefore(today.minusMonths(3)) }
-            val result = settings.copy(schedules = ProfkomSchedules(schedule.copy(overrides = overrides)))
-            preferences[profkomSettingsKey] = json.encodeToString(result)
+            val result = settings.copy(schedules = FinSupportSchedules(schedule.copy(overrides = overrides)))
+            preferences[finSupportSettingsKey] = json.encodeToString(result)
         }
         return read(preferences)
     }
 
-    private fun read(preferences: Preferences): ProfkomSettings = preferences[profkomSettingsKey]
-        ?.let { normalize(json.decodeFromString<ProfkomSettings>(it)) }
-        ?: ProfkomSettings()
+    private fun read(preferences: Preferences): FinSupportSettings = preferences[finSupportSettingsKey]
+        ?.let { normalize(json.decodeFromString<FinSupportSettings>(it)) }
+        ?: FinSupportSettings()
 
     private fun validateRange(range: DayRange, maxDay: Int) {
         require(range.from in 1..maxDay && range.to in range.from..maxDay) { "Некорректный диапазон дней" }
@@ -112,9 +112,9 @@ class ProfkomSettingsService(
         }
     }
 
-    private fun normalize(settings: ProfkomSettings): ProfkomSettings {
+    private fun normalize(settings: FinSupportSettings): FinSupportSettings {
         val schedule = settings.schedules.materialAid
-        return ProfkomSettings(ProfkomSchedules(schedule.copy(
+        return FinSupportSettings(FinSupportSchedules(schedule.copy(
             default = schedule.default.copy(hours = schedule.default.hours.normalized()),
             overrides = schedule.overrides.mapValues { (_, override) -> override.copy(hours = override.hours?.normalized()) },
         )))

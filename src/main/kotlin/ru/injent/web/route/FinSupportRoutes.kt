@@ -8,17 +8,17 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
 import io.ktor.server.routing.put
-import ru.injent.service.config.ProfkomSettings
-import ru.injent.service.config.ProfkomSettingsService
+import ru.injent.service.config.FinSupportSettings
+import ru.injent.service.config.FinSupportSettingsService
 import ru.injent.web.dto.ApiError
 
-fun Routing.profkomPage(settings: ProfkomSettingsService) {
+fun Routing.finSupportPage(settings: FinSupportSettingsService) {
     get("/finsupport") {
         call.respond(FreeMarkerContent("index.html", indexModel(call)))
     }
-    get("/api/profkom") { call.respond(settings.get()) }
-    put("/api/profkom") {
-        val input = call.receive<ProfkomSettings>()
+    get("/api/finsupport") { call.respond(settings.get()) }
+    put("/api/finsupport") {
+        val input = call.receive<FinSupportSettings>()
         try {
             call.respond(settings.update(input))
         } catch (cause: IllegalArgumentException) {

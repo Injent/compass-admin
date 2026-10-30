@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "ru.injent"
-version = "2"
+version = "3"
 
 tasks.processResources {
     inputs.property("appVersion", project.version.toString())

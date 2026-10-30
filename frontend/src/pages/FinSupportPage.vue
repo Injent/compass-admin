@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api } from '../api'
-import ProfkomScheduleForm from '../components/ProfkomScheduleForm.vue'
+import FinSupportScheduleForm from '../components/FinSupportScheduleForm.vue'
 
 const settings = ref(null)
 const initial = ref('')
@@ -116,7 +116,7 @@ async function save() {
   error.value = ''
   saved.value = false
   try {
-    settings.value = await api('/api/profkom', { method: 'PUT', body: JSON.stringify(editedSettings.value) })
+    settings.value = await api('/api/finsupport', { method: 'PUT', body: JSON.stringify(editedSettings.value) })
     initial.value = JSON.stringify(settings.value)
     resetDraft()
     saved.value = true
@@ -142,7 +142,7 @@ onMounted(async () => {
   addEventListener('beforeunload', beforeUnload)
   month.value = currentMonth()
   try {
-    settings.value = await api('/api/profkom')
+    settings.value = await api('/api/finsupport')
     initial.value = JSON.stringify(settings.value)
     resetDraft()
   } catch (cause) { error.value = cause.message }
@@ -151,8 +151,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div id="profkom-scroll" class="profkom-page">
-    <m3e-app-bar class="profkom-header" for="profkom-scroll">
+  <div id="finsupport-scroll" class="finsupport-page">
+    <m3e-app-bar class="finsupport-header" for="finsupport-scroll">
       <h1 slot="title">Материальная поддержка</h1>
       <div slot="trailing" class="actions-wrapper">
         <m3e-button variant="text" :disabled="!changed || busy" @click="reset">Сбросить</m3e-button>
@@ -163,17 +163,17 @@ onMounted(async () => {
     <div v-if="saved && !changed" class="message success-message" role="status"><m3e-icon name="check_circle" />Настройки сохранены</div>
     <div v-if="loading" class="empty-state"><m3e-circular-progress-indicator indeterminate aria-label="Загрузка настроек" /></div>
     <template v-else-if="schedule">
-      <div class="profkom-cards">
+      <div class="finsupport-cards">
         <section>
           <h2 class="form-title"><m3e-icon name="event_repeat" />Постоянный график</h2>
-          <div class="profkom-fields">
+          <div class="finsupport-fields">
 
-            <ProfkomScheduleForm :value="schedule.default" :disabled="busy" prefix="default" split-cards :day-errors="defaultDayErrors" />
+            <FinSupportScheduleForm :value="schedule.default" :disabled="busy" prefix="default" split-cards :day-errors="defaultDayErrors" />
             <section class="reception-months">
               <h3>Месяцы приёма</h3>
-              <m3e-card class="profkom-card months-card">
+              <m3e-card class="finsupport-card months-card">
               <div slot="content">
-              <label v-for="(label, index) in months" :key="index" class="profkom-toggle profkom-month">
+              <label v-for="(label, index) in months" :key="index" class="finsupport-toggle finsupport-month">
                 <span>{{ label }}</span><m3e-checkbox :checked="schedule.default.months.includes(index + 1)" :disabled="busy" :aria-label="label" @change="toggleMonth(index + 1, $event.target.checked)" />
               </label>
               </div>
@@ -184,24 +184,24 @@ onMounted(async () => {
 
         <section>
           <h2 class="form-title"><m3e-icon name="edit_calendar" />Исключение на {{ monthLabel }}</h2>
-        <m3e-card variant="filled" class="profkom-card">
-          <div slot="content" class="profkom-fields">
+        <m3e-card variant="filled" class="finsupport-card">
+          <div slot="content" class="finsupport-fields">
             <m3e-button v-if="!overrideActive" variant="filled" :disabled="busy" @click="toggleOverride(true)">Добавить исключение</m3e-button>
-            <ProfkomScheduleForm v-if="overrideActive" :value="draft" :disabled="busy" prefix="override" :day-errors="overrideDayErrors" :max-day="monthEnd.getDate()" />
+            <FinSupportScheduleForm v-if="overrideActive" :value="draft" :disabled="busy" prefix="override" :day-errors="overrideDayErrors" :max-day="monthEnd.getDate()" />
             <m3e-button v-if="overrideActive" variant="outlined" :disabled="busy" @click="resetDraft">Отменить добавление исключения</m3e-button>
           </div>
-          <div slot="footer" class="profkom-history">
+          <div slot="footer" class="finsupport-history">
             <m3e-divider /><h3>История исключений</h3>
             <m3e-list v-if="history.length" aria-label="История исключений">
               <m3e-list-item v-for="([key, override]) in history" :key="key">
                 <m3e-icon slot="leading" name="event_note" />
-                <span class="profkom-month">{{ historyMonth(key) }}</span>
+                <span class="finsupport-month">{{ historyMonth(key) }}</span>
                 <span slot="supporting-text">{{ describe(override) }}</span>
                 <m3e-icon-button slot="trailing" :disabled="busy" :aria-label="`Отменить исключение за ${historyMonth(key)}`" :id="`undo-${key}`" @click="removeOverride(key)"><m3e-icon name="undo" /></m3e-icon-button>
                 <m3e-tooltip :for="`undo-${key}`">Отменить исключение</m3e-tooltip>
               </m3e-list-item>
             </m3e-list>
-            <p v-else class="profkom-hint">Исключений пока нет</p>
+            <p v-else class="finsupport-hint">Исключений пока нет</p>
           </div>
         </m3e-card>
         </section>
@@ -214,27 +214,27 @@ onMounted(async () => {
 .form-title { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .form-title m3e-icon { color: var(--md-sys-color-primary); font-size: 24px; flex: none; }
 .months-card { display: block; }
-.profkom-page { box-sizing: border-box; height: 100%; overflow: auto; padding: 0 32px 40px; color: var(--md-sys-color-on-surface); }
-.profkom-header { position: sticky; top: 0; z-index: 10; margin-bottom: 20px; --m3e-app-bar-container-elevation: none; --m3e-app-bar-container-elevation-on-scroll: none; --m3e-app-bar-container-color: var(--md-sys-color-surface-container-low); --m3e-app-bar-container-color-on-scroll: var(--md-sys-color-surface-container-low); }
+.finsupport-page { box-sizing: border-box; height: 100%; overflow: auto; padding: 0 32px 40px; color: var(--md-sys-color-on-surface); }
+.finsupport-header { position: sticky; top: 0; z-index: 10; margin-bottom: 20px; --m3e-app-bar-container-elevation: none; --m3e-app-bar-container-elevation-on-scroll: none; --m3e-app-bar-container-color: var(--md-sys-color-surface-container-low); --m3e-app-bar-container-color-on-scroll: var(--md-sys-color-surface-container-low); }
 h1 { margin: 0; font-size: 32px; font-weight: 400; }
-.profkom-card p { color: var(--md-sys-color-on-surface-variant); margin: 4px 0 0; line-height: 1.4; }
-.profkom-cards { display: grid; grid-template-columns: minmax(380px, 1fr) minmax(380px, 1fr); align-items: start; gap: 24px; max-width: 1280px; }
-.profkom-card { min-width: 0; --m3e-card-padding: 20px; --m3e-card-shape: 24px; --m3e-filled-card-container-color: var(--md-sys-color-surface-container-lowest); }
-.profkom-card [slot="header"] { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-.profkom-card [slot="footer"] { display: block; margin-top: 16px; }
-.profkom-card [slot="header"] > m3e-icon { flex: none; color: var(--md-sys-color-primary); font-size: 24px; }
+.finsupport-card p { color: var(--md-sys-color-on-surface-variant); margin: 4px 0 0; line-height: 1.4; }
+.finsupport-cards { display: grid; grid-template-columns: minmax(380px, 1fr) minmax(380px, 1fr); align-items: start; gap: 24px; max-width: 1280px; }
+.finsupport-card { min-width: 0; --m3e-card-padding: 20px; --m3e-card-shape: 24px; --m3e-filled-card-container-color: var(--md-sys-color-surface-container-lowest); }
+.finsupport-card [slot="header"] { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.finsupport-card [slot="footer"] { display: block; margin-top: 16px; }
+.finsupport-card [slot="header"] > m3e-icon { flex: none; color: var(--md-sys-color-primary); font-size: 24px; }
 h2 { font-size: 20px; font-weight: 400; margin: 0; }
 h3 { font-size: 14px; font-weight: 500; margin: 0 0 8px 16px; }
-.profkom-fields { display: grid; gap: 12px; border: 0; min-width: 0; padding: 0; margin: 0; }
-.profkom-toggle { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 40px; cursor: pointer; }
-.profkom-toggle m3e-checkbox { flex: none; }
-.profkom-hint { font-size: 13px; }
-.profkom-month { text-transform: capitalize; }
+.finsupport-fields { display: grid; gap: 12px; border: 0; min-width: 0; padding: 0; margin: 0; }
+.finsupport-toggle { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 40px; cursor: pointer; }
+.finsupport-toggle m3e-checkbox { flex: none; }
+.finsupport-hint { font-size: 13px; }
+.finsupport-month { text-transform: capitalize; }
 .reception-months { margin-top: 4px; }
-.profkom-history h3 { margin: 16px 0 8px; }
-.profkom-history m3e-list { margin-inline: -12px; }
-.profkom-history m3e-list-item { --m3e-list-item-container-color: transparent; }
-@media (max-width: 1100px) { .profkom-page { padding: 0 20px 32px; } .profkom-cards { gap: 16px; grid-template-columns: 1fr 1fr; } }
-@media (max-width: 1000px) { .profkom-cards { grid-template-columns: 1fr; } .profkom-header { align-items: flex-start; flex-direction: column; gap: 16px; } }
-@media (max-width: 520px) { .profkom-page { padding: 0 12px 12px; } .profkom-card { --m3e-card-padding: 16px; } }
+.finsupport-history h3 { margin: 16px 0 8px; }
+.finsupport-history m3e-list { margin-inline: -12px; }
+.finsupport-history m3e-list-item { --m3e-list-item-container-color: transparent; }
+@media (max-width: 1100px) { .finsupport-page { padding: 0 20px 32px; } .finsupport-cards { gap: 16px; grid-template-columns: 1fr 1fr; } }
+@media (max-width: 1000px) { .finsupport-cards { grid-template-columns: 1fr; } .finsupport-header { align-items: flex-start; flex-direction: column; gap: 16px; } }
+@media (max-width: 520px) { .finsupport-page { padding: 0 12px 12px; } .finsupport-card { --m3e-card-padding: 16px; } }
 </style>
