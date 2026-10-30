@@ -15,6 +15,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import ru.injent.service.auth.AUTH_COOKIE_NAME
 import ru.injent.service.auth.AuthService
+import ru.injent.service.config.Access
 
 /**
  * Маршруты аутентификации пользователей.
@@ -53,7 +54,7 @@ fun Routing.authPage(authService: AuthService) {
             encoding = CookieEncoding.RAW,
         )
         if (form != null) {
-            call.response.header("Location", next)
+            call.response.header("Location", if (user.role == Access.Role.PROFKOM) "/profkom" else next)
             call.respond(HttpStatusCode.SeeOther)
         } else {
             call.respond(HttpStatusCode.NoContent)

@@ -40,8 +40,10 @@ class AuthFlowTest {
         val browser = createClient { followRedirects = false }
         for (role in Access.Role.entries) {
             val login = browser.submitForm("/auth/login", parameters {
-                append("login", role.name); append("password", "password")
+                append("login", role.name); append("password", "password"); append("next", "/schedule")
             })
+            assertEquals(HttpStatusCode.SeeOther, login.status)
+            assertEquals(if (role == Access.Role.PROFKOM) "/profkom" else "/schedule", login.headers[HttpHeaders.Location])
             val cookie = login.headers[HttpHeaders.SetCookie]!!.substringBefore(';')
             val expected = if (role in setOf(Access.Role.PROFKOM, Access.Role.SUPERUSER)) HttpStatusCode.OK else HttpStatusCode.Forbidden
             assertEquals(expected, browser.get("/profkom") { header(HttpHeaders.Cookie, cookie) }.status)
