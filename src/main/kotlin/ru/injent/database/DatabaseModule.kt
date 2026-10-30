@@ -5,8 +5,11 @@ import org.jetbrains.exposed.v1.jdbc.SchemaUtils
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
+import org.koin.dsl.onClose
 import ru.injent.service.ScheduleChangeTracker
 import ru.injent.service.ScheduleGroupService
+import ru.injent.service.config.ProfkomSettingsService
+import ru.injent.service.config.ServerSettingsStore
 
 /**
  * Koin-модуль базы данных и инициализации Exposed.
@@ -20,10 +23,12 @@ val databaseModule = module {
     }
     singleOf(::ScheduleGroupService)
     singleOf(::ScheduleChangeTracker)
+    single { ServerSettingsStore(get()) } onClose { it?.close() }
+    single { ProfkomSettingsService(get<ServerSettingsStore>().preferences) }
 }
 
 private fun initializeDatabase(database: Database) {
     transaction(database) {
-        SchemaUtils.create(TeachersTable, ScheduleGroupsTable, ScheduleFileApprovalsTable)
+        SchemaUtils.create(TeachersTable, ScheduleGroupsTable, ScheduleFileApprovalsTable, ServerSettingsTable)
     }
 }

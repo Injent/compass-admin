@@ -97,7 +97,7 @@ class GoogleWorkspaceService(
     /**
      * Загружает файлы расписания из папки рабочего пространства Drive.
      */
-    suspend fun loadFiles(): Result<Unit> {
+    suspend fun loadFiles(validateOnStartup: Boolean = true): Result<Unit> {
         val result = withScheduleOperation {
             val folder = getWorkspaceFolder().getOrElse { return@withScheduleOperation Result.failure(it) }
             val loadedFiles = getAllFiles(folder.id).getOrElse { return@withScheduleOperation Result.failure(it) }
@@ -110,14 +110,14 @@ class GoogleWorkspaceService(
                     .map { file -> file.fileId }
             )
             notifyScheduleGroupUpdate()
-            syncLoadedFileGroups()
+            if (validateOnStartup) syncLoadedFileGroups()
             refreshGroupConflicts()
             filesLoaded.value = true
             notifyScheduleGroupUpdate()
             Result.success(Unit)
         }
 
-        if (result.isSuccess) {
+        if (result.isSuccess && validateOnStartup) {
             files.value
                 .filter { file -> file.status == FileStatus.PROCESSING }
                 .forEach { file ->

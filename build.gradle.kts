@@ -61,6 +61,7 @@ jib {
         args = listOf("-config=/app/config/application.yaml")
         ports = listOf("9001")
         environment = mapOf(
+            "COMPASS_ENV" to "production",
             "COMPASS_DB_PATH" to "/app/data/compassadmin.db",
             "GOOGLE_CREDENTIALS_PATH" to "/app/google/credentials.json",
             "GOOGLE_TOKENS_DIR" to "/app/tokens",
@@ -91,6 +92,7 @@ tasks.named("jib") {
 }
 
 dependencies {
+    implementation("androidx.datastore:datastore-preferences-core:1.3.0")
     implementation(libs.apache.poi)
     implementation(libs.kotlinx.datetime)
     implementation(ktorLibs.serialization.kotlinx.json)

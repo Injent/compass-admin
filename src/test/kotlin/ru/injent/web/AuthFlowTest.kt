@@ -20,6 +20,34 @@ import kotlin.test.*
 
 class AuthFlowTest {
     @Test
+    fun `profkom and administrator roles can access profkom page and API`() = testApplication {
+        application {
+            val auth = AuthService(AppConfig(
+                GigaChatConfig("", "", 0, ""), CompassApiConfig("", ""),
+                Access.Role.entries.map { Access(it, it.name, "password") },
+            ))
+            installAuthGuard(auth, "test-key")
+            routing {
+                authPage(auth)
+                get("/profkom") { call.respondText("profkom") }
+                get("/api/profkom") { call.respondText("settings") }
+                put("/api/profkom") { call.respondText("saved") }
+            }
+        }
+        val browser = createClient { followRedirects = false }
+        for (role in Access.Role.entries) {
+            val login = browser.submitForm("/auth/login", parameters {
+                append("login", role.name); append("password", "password")
+            })
+            val cookie = login.headers[HttpHeaders.SetCookie]!!.substringBefore(';')
+            val expected = if (role in setOf(Access.Role.PROFKOM, Access.Role.SUPERUSER)) HttpStatusCode.OK else HttpStatusCode.Forbidden
+            assertEquals(expected, browser.get("/profkom") { header(HttpHeaders.Cookie, cookie) }.status)
+            assertEquals(expected, browser.get("/api/profkom") { header(HttpHeaders.Cookie, cookie) }.status)
+            assertEquals(expected, browser.put("/api/profkom") { header(HttpHeaders.Cookie, cookie) }.status)
+        }
+    }
+
+    @Test
     fun `schedule login works without javascript`() = testApplication {
         application {
             install(FreeMarker) { templateLoader = FileTemplateLoader(File("templates")) }

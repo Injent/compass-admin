@@ -32,6 +32,7 @@ import ru.injent.database.databaseModule
 import ru.injent.service.auth.AuthService
 import ru.injent.service.config.AppConfig
 import ru.injent.service.config.RemoteConfigService
+import ru.injent.service.config.ProfkomSettingsService
 import ru.injent.service.google.GoogleWorkspaceService
 import ru.injent.service.google.googleModule
 import ru.injent.service.teacher.TeacherService
@@ -147,7 +148,7 @@ fun Application.configureApp() {
 
     launch {
         while (true) {
-            val result = googleService.loadFiles()
+            val result = googleService.loadFiles(validateOnStartup = System.getenv("COMPASS_ENV") == "production")
             if (result.isSuccess) break
             log.warn("Unable to load schedule files; retrying in 30 seconds", result.exceptionOrNull())
             delay(30.seconds)
@@ -161,6 +162,7 @@ fun Application.configureApp() {
         schedulePage(googleService, wordCorrectionService, sheetValidators, appConfig, httpClient, this@configureApp, log)
         teachersPage(teacherService)
         configPage(remoteConfigService)
+        profkomPage(get<ProfkomSettingsService>())
         editorPage(googleService)
         googleSheetsCallbackPage(googleService, sheetValidators, this@configureApp)
     }

@@ -46,6 +46,7 @@ data class Access(
 ) {
     enum class Role {
         SUPERUSER,
-        USER
+        USER,
+        PROFKOM
     }
 }

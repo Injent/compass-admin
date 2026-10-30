@@ -5,9 +5,16 @@ import SchedulePage from './pages/SchedulePage.vue'
 import TeachersPage from './pages/TeachersPage.vue'
 import ConfigPage from './pages/ConfigPage.vue'
 import GuidePage from './pages/GuidePage.vue'
+import ProfkomPage from './pages/ProfkomPage.vue'
 
 const route = ref(location.pathname)
+const page = ref(null)
+let historyIndex = history.state?.compassIndex ?? 0
+let restoringHistory = false
+let leaving = false
+history.replaceState({ ...history.state, compassIndex: historyIndex }, '', location.href)
 const canAccessConfig = Boolean(window.__APP_CONFIG__?.canAccessConfig)
+const canAccessProfkom = Boolean(window.__APP_CONFIG__?.canAccessProfkom)
 const appVersion = window.__APP_CONFIG__?.appVersion
 const sheetsQuota = ref(null)
 let quotaEvents
@@ -19,15 +26,37 @@ const routes = [
   { path: '/schedule', label: 'Расписание', icon: 'calendar_today', component: SchedulePage },
   { path: '/sheetdiff', label: 'Сравнение', icon: 'difference', component: SheetDiffPage },
   { path: '/teachers', label: 'Преподаватели', icon: 'co_present', component: TeachersPage },
+  ...(canAccessProfkom ? [{ path: '/profkom', label: 'Профком', icon: 'diversity_1', component: ProfkomPage }] : []),
   ...(canAccessConfig ? [{ path: '/config', label: 'Конфиг', icon: 'call_merge', component: ConfigPage }] : []),
 ]
 const activeRoute = computed(() => routes.find(item => route.value.startsWith(item.path)) || routes[0])
 
-function navigate(path) {
-  if (location.pathname !== path || location.search) history.pushState({}, '', path)
+async function canLeave() {
+  if (leaving) return false
+  leaving = true
+  try { return await (page.value?.beforeLeave?.() ?? true) }
+  finally { leaving = false }
+}
+async function navigate(path) {
+  if (route.value === path && !location.search) return
+  if (!await canLeave()) return
+  history.pushState({ compassIndex: ++historyIndex }, '', path)
   route.value = path
 }
-function onPopState() { route.value = location.pathname }
+async function onPopState(event) {
+  if (restoringHistory) { restoringHistory = false; return }
+  const targetIndex = event.state?.compassIndex ?? 0
+  if (!await canLeave()) {
+    restoringHistory = true
+    history.go(historyIndex - targetIndex)
+    return
+  }
+  historyIndex = targetIndex
+  route.value = location.pathname
+}
+async function logout(event) {
+  if (await canLeave()) event.target.submit()
+}
 onMounted(() => {
   if (location.pathname === '/') navigate('/schedule')
   addEventListener('popstate', onPopState)
@@ -83,12 +112,12 @@ onBeforeUnmount(() => {
             :aria-label="quotaTitle"
           >{{ sheetsQuota ? `${sheetsQuota.remainingPercent}` : '' }}</m3e-circular-progress-indicator>
         </div>
-        <form class="logout-form" method="post" action="/auth/logout">
+        <form class="logout-form" method="post" action="/auth/logout" @submit.prevent="logout">
           <m3e-icon-button type="submit" aria-label="Выход"><m3e-icon name="logout" /></m3e-icon-button>
         </form>
       </div>
       <main class="app-content">
-        <component :is="activeRoute.component" :key="activeRoute.path" />
+        <component :is="activeRoute.component" :key="activeRoute.path" ref="page" />
       </main>
     </div>
 

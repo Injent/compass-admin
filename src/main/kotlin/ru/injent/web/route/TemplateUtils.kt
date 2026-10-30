@@ -31,10 +31,12 @@ fun renderTemplate(templateName: String, model: Map<String, Any?>): String {
  */
 fun indexModel(call: ApplicationCall): Map<String, Any> =
     call.application.get<AuthService>().let { authService ->
-        val canAccessConfig = authService.authenticate(call)?.role == Access.Role.SUPERUSER
+        val role = authService.authenticate(call)?.role
+        val canAccessConfig = role == Access.Role.SUPERUSER
         mapOf(
             "initialContentUrl" to call.initialContentUrl(canAccessConfig),
             "canAccessConfig" to canAccessConfig,
+            "canAccessProfkom" to (role == Access.Role.PROFKOM || canAccessConfig),
             "appVersion" to if (canAccessConfig) appVersion else "",
         )
     }
