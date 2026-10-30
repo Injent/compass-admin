@@ -137,7 +137,7 @@ fun Application.configureApp() {
     }
 
     val authService = get<AuthService>()
-    installAuthGuard(authService, appConfig.googleCallbackApiKey)
+    installAuthGuard(authService, appConfig.googleCallbackApiKey, appConfig.compassApiConfig.apiKey)
 
     val googleService = get<GoogleWorkspaceService>()
     val wordCorrectionService = get<WordCorrectionService>()

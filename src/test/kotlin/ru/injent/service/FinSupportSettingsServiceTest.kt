@@ -95,6 +95,8 @@ class FinSupportSettingsServiceTest {
         val replaced = at("2026-10-30").update(settings(overrides = mapOf("2026-12" to ScheduleOverride(enabled = false))))
         assertEquals("2026-07-30", replaced.schedules.materialAid.overrides.getValue("2026-12").createdAt)
         assertTrue("2026-12" in at("2026-10-31").get().schedules.materialAid.overrides)
+        assertTrue(at("2026-10-31").getActive().schedules.materialAid.overrides.isEmpty())
+        assertTrue("2026-12" in at("2026-10-30").getActive().schedules.materialAid.overrides)
         assertTrue(at("2026-10-31").update(replaced).schedules.materialAid.overrides.isEmpty())
     }
 

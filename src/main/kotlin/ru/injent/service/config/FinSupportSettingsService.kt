@@ -80,6 +80,17 @@ class FinSupportSettingsService(
 
     suspend fun get(): FinSupportSettings = read(store.data.first())
 
+    suspend fun getActive(): FinSupportSettings {
+        val settings = get()
+        val schedule = settings.schedules.materialAid
+        val today = LocalDate.now(clock)
+        val overrides = schedule.overrides.filter { (month, override) ->
+            YearMonth.parse(month) >= YearMonth.from(today) &&
+                (override.createdAt == null || !LocalDate.parse(override.createdAt).isBefore(today.minusMonths(3)))
+        }
+        return settings.copy(schedules = FinSupportSchedules(schedule.copy(overrides = overrides)))
+    }
+
     suspend fun update(settings: FinSupportSettings): FinSupportSettings {
         val preferences = store.edit { preferences ->
             require(settings.schemaVersion == 2 && settings.timeZone == "Europe/Moscow") { "Неподдерживаемая схема или часовой пояс" }

@@ -16,15 +16,26 @@ import ru.injent.service.auth.AuthService
 import ru.injent.service.config.Access
 import java.net.URLEncoder
 
+const val SCHEDULE_CONFIG_PATH = "/api/schedules/config"
+const val SCHEDULE_CONFIG_API_KEY_HEADER = "X-Api-Key"
+
 const val GOOGLE_CALLBACK_PATH = "/schedule/google/callback"
 const val GOOGLE_CALLBACK_API_KEY_HEADER = "X-API-Key"
 
 /**
  * Устанавливает перехватчик проверки авторизации для защиты эндпоинтов.
  */
-fun Application.installAuthGuard(authService: AuthService, googleCallbackApiKey: String) {
+fun Application.installAuthGuard(authService: AuthService, googleCallbackApiKey: String, scheduleApiKey: String? = null) {
     intercept(ApplicationCallPipeline.Plugins) {
         val path = call.request.path()
+
+        if (path == SCHEDULE_CONFIG_PATH) {
+            if (scheduleApiKey.isNullOrBlank() || call.request.headers[SCHEDULE_CONFIG_API_KEY_HEADER] != scheduleApiKey) {
+                call.respond(HttpStatusCode.Unauthorized)
+                finish()
+            }
+            return@intercept
+        }
 
         if (path.isGoogleCallbackPath()) {
             if (call.request.headers[GOOGLE_CALLBACK_API_KEY_HEADER] != googleCallbackApiKey) {
