@@ -29,7 +29,7 @@ const routes = [
   { path: '/sheetdiff', label: 'Сравнение', icon: 'difference', component: SheetDiffPage },
   { path: '/teachers', label: 'Преподаватели', icon: 'co_present', component: TeachersPage },
   ] : []),
-  ...(canAccessProfkom ? [{ path: '/profkom', label: 'Профком', icon: 'diversity_1', component: ProfkomPage }] : []),
+  ...(canAccessProfkom ? [{ path: '/finsupport', label: 'Материалка', icon: 'volunteer_activism', component: ProfkomPage }] : []),
   ...(canAccessConfig ? [{ path: '/config', label: 'Конфиг', icon: 'call_merge', component: ConfigPage }] : []),
 ]
 const activeRoute = computed(() => routes.find(item => route.value.startsWith(item.path)) || routes[0])

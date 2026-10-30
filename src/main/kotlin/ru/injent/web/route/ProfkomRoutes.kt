@@ -13,7 +13,7 @@ import ru.injent.service.config.ProfkomSettingsService
 import ru.injent.web.dto.ApiError
 
 fun Routing.profkomPage(settings: ProfkomSettingsService) {
-    get("/profkom") {
+    get("/finsupport") {
         call.respond(FreeMarkerContent("index.html", indexModel(call)))
     }
     get("/api/profkom") { call.respond(settings.get()) }

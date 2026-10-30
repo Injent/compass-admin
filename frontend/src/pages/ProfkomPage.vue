@@ -153,7 +153,7 @@ onMounted(async () => {
 <template>
   <div id="profkom-scroll" class="profkom-page">
     <m3e-app-bar class="profkom-header" for="profkom-scroll">
-      <h1 slot="title">Профком</h1>
+      <h1 slot="title">Материальная поддержка</h1>
       <div slot="trailing" class="actions-wrapper">
         <m3e-button variant="text" :disabled="!changed || busy" @click="reset">Сбросить</m3e-button>
         <m3e-button variant="filled" :disabled="!changed || !defaultsValid || !overrideValid || busy" @click="save"><m3e-icon slot="icon" name="save" />{{ busy ? 'Сохранение…' : 'Сохранить' }}</m3e-button>

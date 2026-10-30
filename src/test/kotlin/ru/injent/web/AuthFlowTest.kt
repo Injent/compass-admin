@@ -29,7 +29,7 @@ class AuthFlowTest {
             installAuthGuard(auth, "test-key")
             routing {
                 authPage(auth)
-                get("/profkom") { call.respondText("profkom") }
+                get("/finsupport") { call.respondText("profkom") }
                 listOf("/schedule", "/sheetdiff", "/teachers", "/api/teachers", "/api/config", "/guide").forEach { path ->
                     get(path) { call.respondText("other section") }
                 }
@@ -43,10 +43,10 @@ class AuthFlowTest {
                 append("login", role.name); append("password", "password"); append("next", "/schedule")
             })
             assertEquals(HttpStatusCode.SeeOther, login.status)
-            assertEquals(if (role == Access.Role.PROFKOM) "/profkom" else "/schedule", login.headers[HttpHeaders.Location])
+            assertEquals(if (role == Access.Role.PROFKOM) "/finsupport" else "/schedule", login.headers[HttpHeaders.Location])
             val cookie = login.headers[HttpHeaders.SetCookie]!!.substringBefore(';')
             val expected = if (role in setOf(Access.Role.PROFKOM, Access.Role.SUPERUSER)) HttpStatusCode.OK else HttpStatusCode.Forbidden
-            assertEquals(expected, browser.get("/profkom") { header(HttpHeaders.Cookie, cookie) }.status)
+            assertEquals(expected, browser.get("/finsupport") { header(HttpHeaders.Cookie, cookie) }.status)
             assertEquals(expected, browser.get("/api/profkom") { header(HttpHeaders.Cookie, cookie) }.status)
             assertEquals(expected, browser.put("/api/profkom") { header(HttpHeaders.Cookie, cookie) }.status)
             for (path in listOf("/schedule", "/sheetdiff", "/teachers", "/api/teachers", "/api/config", "/guide")) {
@@ -56,7 +56,7 @@ class AuthFlowTest {
             if (role == Access.Role.PROFKOM) {
                 val root = browser.get("/") { header(HttpHeaders.Cookie, cookie) }
                 assertEquals(HttpStatusCode.Found, root.status)
-                assertEquals("/profkom", root.headers[HttpHeaders.Location])
+                assertEquals("/finsupport", root.headers[HttpHeaders.Location])
             }
         }
     }

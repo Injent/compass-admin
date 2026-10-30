@@ -54,7 +54,7 @@ fun Routing.authPage(authService: AuthService) {
             encoding = CookieEncoding.RAW,
         )
         if (form != null) {
-            call.response.header("Location", if (user.role == Access.Role.PROFKOM) "/profkom" else next)
+            call.response.header("Location", if (user.role == Access.Role.PROFKOM) "/finsupport" else next)
             call.respond(HttpStatusCode.SeeOther)
         } else {
             call.respond(HttpStatusCode.NoContent)
