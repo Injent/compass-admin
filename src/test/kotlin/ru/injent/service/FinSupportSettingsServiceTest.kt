@@ -12,150 +12,108 @@ import ru.injent.service.config.*
 import java.nio.file.Files
 import java.time.Clock
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.test.*
 
 class FinSupportSettingsServiceTest {
-    @Test
-    fun `API serialization includes all default fields without omitted override parameters`() {
-        val encoded = Json.parseToJsonElement(Json.encodeToString(settings(mapOf("2026-10" to ScheduleOverride(enabled = false)))))
-            .jsonObject.getValue("schedules").jsonObject.getValue("materialAid").jsonObject
-        assertEquals(setOf("enabled", "dayRange", "hours", "months"), encoded.getValue("default").jsonObject.keys)
-        assertEquals(setOf("enabled"), encoded.getValue("overrides").jsonObject.getValue("2026-10").jsonObject.keys)
-        assertTrue("overrides" in Json.parseToJsonElement(Json.encodeToString(FinSupportSettings())).jsonObject
-            .getValue("schedules").jsonObject.getValue("materialAid").jsonObject)
+    private val clock = Clock.fixed(Instant.parse("2026-10-30T09:00:00Z"), ZoneId.of("Europe/Moscow"))
+    private fun settings(base: ScheduleDefaults = ScheduleDefaults(), overrides: Map<String, ScheduleOverride> = emptyMap()) =
+        FinSupportSettings(schedules = FinSupportSchedules(MaterialAidSchedule(base, overrides)))
+
+    private fun withStore(test: suspend (ServerSettingsStore, Database, java.io.File) -> Unit) = runBlocking {
+        val directory = Files.createTempDirectory("finsupport-v2-").toFile()
+        val database = Database.connect("jdbc:sqlite:${directory.resolve("legacy.db")}", driver = "org.sqlite.JDBC")
+        transaction(database) { SchemaUtils.create(ServerSettingsTable) }
+        val file = directory.resolve("data/prefs.preferences_pb")
+        val store = ServerSettingsStore(database, file)
+        try { test(store, database, file) }
+        finally { store.close(); directory.deleteRecursively() }
     }
 
     @Test
-    fun `weekly hours and reception months persist and old hours migrate`() = withDatabase { database ->
+    fun `migrates legacy hours ranges and partial overrides without losing closed months`() = withStore { store, database, _ ->
         transaction(database) {
             ServerSettingsTable.upsert {
                 it[key] = "profkom"
-                it[value] = """{"schedules":{"materialAid":{"default":{"hours":{"from":"09:00","to":"18:00"}},"overrides":{"2026-10":{"hours":{"from":"11:00","to":"16:00"}}}}}}"""
+                it[value] = """{"schedules":{"materialAid":{"default":{"enabled":true,"dayRange":{"from":1,"to":31},"months":[2,10],"hours":{"from":"09:00","to":"18:00"}},"overrides":{"2026-10":{"enabled":false,"createdAt":"2026-10-20"}}}}}"""
             }
         }
-        val service = FinSupportSettingsService(store.preferences, clock("2026-10-20"))
+        val service = FinSupportSettingsService(store.preferences, clock)
         val loaded = service.get()
-        assertEquals(7, loaded.schedules.materialAid.default.hours.days.size)
-        assertTrue(loaded.schedules.materialAid.default.hours.days.values.all { it.from == "09:00" && it.to == "18:00" })
-        assertEquals("11:00", loaded.schedules.materialAid.overrides.getValue("2026-10").hours!!.days.getValue("monday").from)
-        assertEquals((1..12).toList(), loaded.schedules.materialAid.default.months)
-        val days = loaded.schedules.materialAid.default.hours.days + ("sunday" to WorkDay(false, "00:00", "00:00"))
-        val defaults = loaded.schedules.materialAid.default.copy(hours = ScheduleHours(days = days), months = listOf(1, 5, 12))
-        val result = service.update(settings(emptyMap(), defaults))
-        assertEquals(result, FinSupportSettingsService(store.preferences, clock("2026-10-20")).get())
-        assertEquals(listOf(1, 5, 12), result.schedules.materialAid.default.months)
-        assertFalse(result.schedules.materialAid.default.hours.days.getValue("sunday").enabled)
-        for (invalid in listOf(
-            defaults.copy(months = listOf(0, 13)), defaults.copy(months = listOf(1, 1)),
-            defaults.copy(hours = ScheduleHours(days = days - "monday")),
-            defaults.copy(hours = ScheduleHours(days = days + ("monday" to WorkDay(true, "18:00", "10:00")))),
-        )) assertFailsWith<IllegalArgumentException> { service.update(settings(emptyMap(), invalid)) }
-        assertEquals(result, service.get())
+        assertEquals(2, loaded.schemaVersion)
+        assertEquals("Europe/Moscow", loaded.timeZone)
+        val base = loaded.schedules.materialAid.default
+        assertEquals(29, base.months.getValue("02").dayRange.to)
+        assertFalse(base.months.getValue("01").enabled)
+        assertEquals("09:00", base.hours.days.getValue("monday").from)
+        assertFalse(loaded.schedules.materialAid.overrides.getValue("2026-10").enabled)
+        assertEquals(loaded, service.update(loaded))
     }
 
     @Test
-    fun `preferences survive store restart and do not import stale sqlite settings again`() = withDatabase { database ->
-        val file = Files.createTempDirectory("finsupport-restart-").resolve("data/server.preferences_pb").toFile()
-        var localStore = ServerSettingsStore(database, file)
-        try {
-            val service = FinSupportSettingsService(localStore.preferences, clock("2026-10-20"))
-            val saved = service.update(settings(emptyMap(), ScheduleDefaults(months = listOf(2, 10))))
-            assertTrue(file.isFile)
-            transaction(database) {
-                ServerSettingsTable.upsert {
-                    it[key] = "profkom"
-                    it[value] = Json.encodeToString(FinSupportSettings())
-                }
-            }
-            localStore.close()
-            localStore = ServerSettingsStore(database, file)
-            assertEquals(saved, FinSupportSettingsService(localStore.preferences, clock("2026-10-20")).get())
-        } finally {
-            localStore.close()
-            file.parentFile.parentFile.deleteRecursively()
-        }
-    }
-
-    private val zone = ZoneId.of("Europe/Moscow")
-    private fun clock(date: String) = Clock.fixed(Instant.parse("${date}T09:00:00Z"), zone)
-    private fun settings(overrides: Map<String, ScheduleOverride>, defaults: ScheduleDefaults = ScheduleDefaults()) =
-        FinSupportSettings(FinSupportSchedules(MaterialAidSchedule(defaults, overrides)))
-
-    private lateinit var store: ServerSettingsStore
-
-    private fun withDatabase(test: suspend (Database) -> Unit) = runBlocking {
-        val directory = Files.createTempDirectory("finsupport-")
-        val path = directory.resolve("legacy.db")
-        try {
-            val database = Database.connect("jdbc:sqlite:$path", driver = "org.sqlite.JDBC")
-            transaction(database) { SchemaUtils.create(ServerSettingsTable) }
-            store = ServerSettingsStore(database, directory.resolve("data/server.preferences_pb").toFile())
-            test(database)
-        } finally {
-            store.close()
-            directory.toFile().deleteRecursively()
+    fun `v2 JSON is explicit and preferences survive reopening`() = withStore { store, database, file ->
+        val base = ScheduleDefaults(excludedDates = listOf("01-01", "02-29"))
+        val nextMonth = ScheduleOverride(dayRange = DayRange(5, 20), excludedDates = listOf("2027-01-12"))
+        val service = FinSupportSettingsService(store.preferences, clock)
+        val saved = service.update(settings(base, mapOf("2027-01" to nextMonth)))
+        assertEquals("2026-10-30", saved.schedules.materialAid.overrides.getValue("2027-01").createdAt)
+        val encoded = Json.parseToJsonElement(Json.encodeToString(saved)).jsonObject
+        assertEquals(setOf("schemaVersion", "timeZone", "schedules"), encoded.keys)
+        assertTrue(file.isFile)
+        store.close()
+        ServerSettingsStore(database, file).use { reopened ->
+            assertEquals(saved, FinSupportSettingsService(reopened.preferences, clock).get())
         }
     }
 
     @Test
-    fun `partial override persists locally and creation date survives replacement`() = withDatabase { database ->
-        val service = FinSupportSettingsService(store.preferences, clock("2026-10-20"))
-        assertEquals(FinSupportSettings(), service.get())
-        val saved = service.update(settings(mapOf("2026-10" to ScheduleOverride(enabled = false))))
-        assertEquals("2026-10-20", saved.schedules.materialAid.overrides.getValue("2026-10").createdAt)
-        val restarted = FinSupportSettingsService(store.preferences, clock("2026-10-25"))
-        assertEquals(saved, restarted.get())
-        val updated = restarted.update(settings(mapOf("2026-10" to ScheduleOverride(dayRange = DayRange(1, 20), createdAt = "2099-01-01"))))
-        val override = updated.schedules.materialAid.overrides.getValue("2026-10")
-        assertEquals("2026-10-20", override.createdAt)
-        assertNull(override.enabled)
-        assertNull(override.hours)
-        val json = Json { encodeDefaults = true; explicitNulls = false }
-        val encoded = json.parseToJsonElement(json.encodeToString(override)).jsonObject
-        assertFalse("enabled" in encoded)
-        assertFalse("hours" in encoded)
-        assertTrue(restarted.update(settings(emptyMap())).schedules.materialAid.overrides.isEmpty())
-    }
-
-    @Test
-    fun `expired overrides remain on reads and are pruned only after more than three months`() = withDatabase { database ->
-        FinSupportSettingsService(store.preferences, clock("2026-07-20"))
-            .update(settings(mapOf("2026-07" to ScheduleOverride(enabled = false))))
-        val boundary = FinSupportSettingsService(store.preferences, clock("2026-10-20"))
-        val atBoundary = boundary.update(boundary.get())
-        assertTrue("2026-07" in atBoundary.schedules.materialAid.overrides)
-        val later = FinSupportSettingsService(store.preferences, clock("2026-10-21"))
-        assertTrue("2026-07" in later.get().schedules.materialAid.overrides)
-        assertTrue(later.update(later.get()).schedules.materialAid.overrides.isEmpty())
-    }
-
-    @Test
-    fun `legacy overrides get a creation date and expire on update`() = withDatabase { database ->
-        transaction(database) {
-            ServerSettingsTable.upsert {
-                it[key] = "profkom"
-                it[value] = Json.encodeToString(settings(mapOf("2026-01" to ScheduleOverride(enabled = false))))
-            }
-        }
-        val service = FinSupportSettingsService(store.preferences, clock("2026-10-20"))
-        assertTrue(service.update(service.get()).schedules.materialAid.overrides.isEmpty())
-    }
-
-    @Test
-    fun `invalid ranges hours and edits outside current month do not overwrite settings`() = withDatabase { database ->
-        val service = FinSupportSettingsService(store.preferences, clock("2026-02-20"))
+    fun `validates month ranges recurring dates override month and time atomically`() = withStore { store, _, _ ->
+        val service = FinSupportSettingsService(store.preferences, clock)
+        val valid = service.update(settings())
+        val base = ScheduleDefaults()
         val invalid = listOf(
-            settings(mapOf("2026-02" to ScheduleOverride(dayRange = DayRange(1, 29)))),
-            settings(mapOf("2026-02" to ScheduleOverride(dayRange = DayRange(10, 1)))),
-            settings(mapOf("2026-02" to ScheduleOverride(hours = ScheduleHours("25:00", "26:00")))),
-            settings(mapOf("2026-02" to ScheduleOverride(hours = ScheduleHours("17:00", "10:00")))),
-            settings(mapOf("2026-02" to ScheduleOverride())),
-            settings(mapOf("2026-03" to ScheduleOverride(enabled = false))),
-            settings(mapOf("invalid" to ScheduleOverride(enabled = false))),
-            settings(emptyMap(), ScheduleDefaults(dayRange = DayRange(0, 32))),
+            settings(base.copy(months = base.months - "01")),
+            settings(base.copy(months = base.months + ("02" to ReceptionMonth(dayRange = DayRange(1, 30))))),
+            settings(base.copy(excludedDates = listOf("02-30"))),
+            settings(base.copy(excludedDates = listOf("01-01", "01-01"))),
+            settings(overrides = mapOf("2027-02" to ScheduleOverride(dayRange = DayRange(1, 29)))),
+            settings(overrides = mapOf("2027-02" to ScheduleOverride(excludedDates = listOf("2027-03-01")))),
+            settings(overrides = mapOf("2027-02" to ScheduleOverride(excludedDates = listOf("2027-02-30")))),
+            settings(overrides = mapOf("bad" to ScheduleOverride())),
+            settings(base.copy(hours = ScheduleHours(base.hours.days + ("monday" to WorkDay(from = "17:00", to = "10:00"))))),
         )
-        invalid.forEach { assertFailsWith<IllegalArgumentException> { service.update(it) } }
-        assertEquals(FinSupportSettings(), service.get())
+        invalid.forEach { assertFailsWith<IllegalArgumentException> { service.update(it) }; assertEquals(valid, service.get()) }
+    }
+
+    @Test
+    fun `override cleanup uses creation date only on updates and preserves replacement timestamp`() = withStore { store, _, _ ->
+        fun at(day: String) = FinSupportSettingsService(store.preferences, Clock.fixed(Instant.parse("${day}T09:00:00Z"), ZoneId.of("Europe/Moscow")))
+        val original = at("2026-07-30").update(settings(overrides = mapOf("2026-12" to ScheduleOverride())))
+        val boundary = at("2026-10-30").update(original)
+        assertTrue("2026-12" in boundary.schedules.materialAid.overrides)
+        val replaced = at("2026-10-30").update(settings(overrides = mapOf("2026-12" to ScheduleOverride(enabled = false))))
+        assertEquals("2026-07-30", replaced.schedules.materialAid.overrides.getValue("2026-12").createdAt)
+        assertTrue("2026-12" in at("2026-10-31").get().schedules.materialAid.overrides)
+        assertTrue(at("2026-10-31").update(replaced).schedules.materialAid.overrides.isEmpty())
+    }
+
+    @Test
+    fun `date lookup combines month range weekday and annual exclusions with one-off overrides`() {
+        val base = ScheduleDefaults(excludedDates = listOf("10-05"))
+        val november = ReceptionMonth(dayRange = DayRange(15, 20))
+        val schedule = MaterialAidSchedule(base.copy(months = base.months + ("11" to november)))
+        assertNotNull(schedule.hoursOn(LocalDate.parse("2026-10-01")))
+        assertNull(schedule.hoursOn(LocalDate.parse("2026-10-05")))
+        assertNull(schedule.hoursOn(LocalDate.parse("2026-11-10")))
+        assertNotNull(schedule.hoursOn(LocalDate.parse("2026-11-16")))
+        val hours = ScheduleHours(base.hours.days + ("sunday" to WorkDay(enabled = false)))
+        val changed = schedule.copy(overrides = mapOf("2026-10" to ScheduleOverride(dayRange = DayRange(1, 20), hours = hours, excludedDates = listOf("2026-10-12"))))
+        assertNull(changed.hoursOn(LocalDate.parse("2026-10-04")))
+        assertNull(changed.hoursOn(LocalDate.parse("2026-10-05")))
+        assertNull(changed.hoursOn(LocalDate.parse("2026-10-12")))
+        assertNotNull(changed.hoursOn(LocalDate.parse("2026-10-19")))
+        assertNull(changed.hoursOn(LocalDate.parse("2027-10-19")))
+        assertNull(changed.copy(overrides = mapOf("2026-10" to ScheduleOverride(enabled = false))).hoursOn(LocalDate.parse("2026-10-01")))
     }
 }

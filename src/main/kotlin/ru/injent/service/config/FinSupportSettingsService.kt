@@ -1,19 +1,24 @@
 package ru.injent.service.config
 
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.EncodeDefault
-import kotlinx.serialization.json.Json
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.flow.first
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.*
 import java.time.Clock
 import java.time.LocalDate
+import java.time.MonthDay
 import java.time.YearMonth
 import java.time.ZoneId
 
 @Serializable
-data class FinSupportSettings(@EncodeDefault val schedules: FinSupportSchedules = FinSupportSchedules())
+data class FinSupportSettings(
+    @EncodeDefault val schemaVersion: Int = 2,
+    @EncodeDefault val timeZone: String = "Europe/Moscow",
+    @EncodeDefault val schedules: FinSupportSchedules = FinSupportSchedules(),
+)
 
 @Serializable
 data class FinSupportSchedules(@EncodeDefault val materialAid: MaterialAidSchedule = MaterialAidSchedule())
@@ -27,33 +32,45 @@ data class MaterialAidSchedule(
 @Serializable
 data class ScheduleDefaults(
     @EncodeDefault val enabled: Boolean = true,
-    @EncodeDefault val dayRange: DayRange = DayRange(1, 10),
-    @EncodeDefault val hours: ScheduleHours = ScheduleHours(days = weekDays.associateWith { WorkDay() }),
-    @EncodeDefault val months: List<Int> = (1..12).toList(),
+    @EncodeDefault val months: Map<String, ReceptionMonth> = (1..12).associate { "%02d".format(it) to ReceptionMonth() },
+    @EncodeDefault val hours: ScheduleHours = ScheduleHours(),
+    @EncodeDefault val excludedDates: List<String> = emptyList(),
 )
+
+@Serializable
+data class ReceptionMonth(@EncodeDefault val enabled: Boolean = true, @EncodeDefault val dayRange: DayRange = DayRange(1, 10))
 
 @Serializable
 data class DayRange(val from: Int, val to: Int)
 
-@Serializable
-data class ScheduleHours(val from: String? = null, val to: String? = null, val days: Map<String, WorkDay> = emptyMap()) {
-    fun normalized(): ScheduleHours = if (from != null || to != null) {
-        ScheduleHours(days = weekDays.associateWith { WorkDay(from = from.orEmpty(), to = to.orEmpty()) })
-    } else this
-}
-
 val weekDays = listOf("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+
+@Serializable
+data class ScheduleHours(@EncodeDefault val days: Map<String, WorkDay> = weekDays.associateWith { WorkDay() })
 
 @Serializable
 data class WorkDay(@EncodeDefault val enabled: Boolean = true, @EncodeDefault val from: String = "10:00", @EncodeDefault val to: String = "17:00")
 
 @Serializable
 data class ScheduleOverride(
-    val enabled: Boolean? = null,
-    val dayRange: DayRange? = null,
-    val hours: ScheduleHours? = null,
+    @EncodeDefault val enabled: Boolean = true,
+    @EncodeDefault val dayRange: DayRange = DayRange(1, 10),
+    @EncodeDefault val hours: ScheduleHours = ScheduleHours(),
+    @EncodeDefault val excludedDates: List<String> = emptyList(),
     val createdAt: String? = null,
 )
+
+// Ranges include both boundary days. An enabled override replaces that month's base rule;
+// annual exclusions always apply, and hours are local to the configured time zone.
+internal fun MaterialAidSchedule.hoursOn(date: LocalDate): WorkDay? {
+    val override = overrides[YearMonth.from(date).toString()]
+    val baseMonth = default.months.getValue("%02d".format(date.monthValue))
+    if (!(override?.enabled ?: (default.enabled && baseMonth.enabled))) return null
+    val range = override?.dayRange ?: baseMonth.dayRange
+    if (date.dayOfMonth !in range.from..range.to) return null
+    if (date.toString().substring(5) in default.excludedDates || date.toString() in override?.excludedDates.orEmpty()) return null
+    return (override?.hours ?: default.hours).days.getValue(weekDays[date.dayOfWeek.value - 1]).takeIf { it.enabled }
+}
 
 class FinSupportSettingsService(
     private val store: DataStore<Preferences>,
@@ -65,58 +82,76 @@ class FinSupportSettingsService(
 
     suspend fun update(settings: FinSupportSettings): FinSupportSettings {
         val preferences = store.edit { preferences ->
-            val schedule = normalize(settings).schedules.materialAid
+            require(settings.schemaVersion == 2 && settings.timeZone == "Europe/Moscow") { "Неподдерживаемая схема или часовой пояс" }
+            val schedule = settings.schedules.materialAid
             val existing = read(preferences).schedules.materialAid.overrides
             val today = LocalDate.now(clock)
-            validateRange(schedule.default.dayRange, 31)
+            require(schedule.default.months.keys == (1..12).map { "%02d".format(it) }.toSet()) { "Укажите все 12 месяцев" }
+            schedule.default.months.forEach { (month, rule) -> validateRange(rule.dayRange, YearMonth.of(2000, month.toInt()).lengthOfMonth()) }
             validateHours(schedule.default.hours)
-            require(schedule.default.months.all { it in 1..12 } && schedule.default.months.distinct().size == schedule.default.months.size) {
-                "Некорректные месяцы приёма"
-            }
+            require(schedule.default.excludedDates.distinct().size == schedule.default.excludedDates.size) { "Даты не должны повторяться" }
+            schedule.default.excludedDates.forEach { require(Regex("\\d{2}-\\d{2}").matches(it) && runCatching { MonthDay.parse("--$it") }.isSuccess) { "Некорректная ежегодная дата" } }
             val overrides = schedule.overrides.mapValues { (month, override) ->
                 require(Regex("\\d{4}-(0[1-9]|1[0-2])").matches(month)) { "Некорректный месяц" }
-                val yearMonth = YearMonth.parse(month)
-                val old = existing[month]
-                require(yearMonth == YearMonth.from(today) || (old != null && override.copy(createdAt = old.createdAt) == old)) {
-                    "Изменять график можно только на текущий месяц"
+                val period = YearMonth.parse(month)
+                validateRange(override.dayRange, period.lengthOfMonth())
+                validateHours(override.hours)
+                require(override.excludedDates.distinct().size == override.excludedDates.size) { "Даты не должны повторяться" }
+                override.excludedDates.forEach { date ->
+                    require(Regex("\\d{4}-\\d{2}-\\d{2}").matches(date) && runCatching { YearMonth.from(LocalDate.parse(date)) == period }.getOrDefault(false)) { "Дата должна принадлежать выбранному месяцу" }
                 }
-                require(override.enabled != null || override.dayRange != null || override.hours != null) {
-                    "Укажите хотя бы один параметр исключения"
-                }
-                override.dayRange?.let { validateRange(it, yearMonth.lengthOfMonth()) }
-                override.hours?.let(::validateHours)
-                // Existing entries without metadata use their month as the creation date.
-                override.copy(createdAt = old?.createdAt ?: if (old != null) yearMonth.atDay(1).toString() else today.toString())
+                override.copy(createdAt = existing[month]?.createdAt ?: today.toString())
             }.filterValues { !LocalDate.parse(it.createdAt).isBefore(today.minusMonths(3)) }
-            val result = settings.copy(schedules = FinSupportSchedules(schedule.copy(overrides = overrides)))
-            preferences[finSupportSettingsKey] = json.encodeToString(result)
+            preferences[finSupportSettingsKey] = json.encodeToString(settings.copy(schedules = FinSupportSchedules(schedule.copy(overrides = overrides))))
         }
         return read(preferences)
     }
 
-    private fun read(preferences: Preferences): FinSupportSettings = preferences[finSupportSettingsKey]
-        ?.let { normalize(json.decodeFromString<FinSupportSettings>(it)) }
-        ?: FinSupportSettings()
+    private fun read(preferences: Preferences): FinSupportSettings {
+        val raw = preferences[finSupportSettingsKey] ?: return FinSupportSettings()
+        val root = json.parseToJsonElement(raw).jsonObject
+        if (root["schemaVersion"]?.jsonPrimitive?.int == 2) return json.decodeFromString(raw)
+        return migrate(root)
+    }
 
-    private fun validateRange(range: DayRange, maxDay: Int) {
-        require(range.from in 1..maxDay && range.to in range.from..maxDay) { "Некорректный диапазон дней" }
+    private fun migrate(root: JsonObject): FinSupportSettings {
+        val schedule = root.getValue("schedules").jsonObject.getValue("materialAid").jsonObject
+        val defaults = schedule["default"]?.jsonObject ?: JsonObject(emptyMap())
+        val range = defaults["dayRange"]?.let { json.decodeFromJsonElement<DayRange>(it) } ?: DayRange(1, 10)
+        val enabledMonths = defaults["months"]?.jsonArray?.map { it.jsonPrimitive.int } ?: (1..12).toList()
+        fun hours(element: JsonElement?): ScheduleHours {
+            if (element == null || element is JsonNull) return ScheduleHours()
+            val old = element.jsonObject
+            if (old["days"] != null) return json.decodeFromJsonElement(element)
+            return ScheduleHours(weekDays.associateWith { WorkDay(from = old.getValue("from").jsonPrimitive.content, to = old.getValue("to").jsonPrimitive.content) })
+        }
+        val base = ScheduleDefaults(
+            enabled = defaults["enabled"]?.jsonPrimitive?.boolean ?: true,
+            months = (1..12).associate { month ->
+                val max = YearMonth.of(2000, month).lengthOfMonth()
+                "%02d".format(month) to ReceptionMonth(month in enabledMonths, DayRange(range.from.coerceAtMost(max), range.to.coerceAtMost(max)))
+            },
+            hours = hours(defaults["hours"]),
+        )
+        val overrides = schedule["overrides"]?.jsonObject.orEmpty().mapValues { (month, element) ->
+            val old = element.jsonObject
+            ScheduleOverride(
+                enabled = old["enabled"]?.takeUnless { it is JsonNull }?.jsonPrimitive?.boolean ?: base.enabled,
+                dayRange = old["dayRange"]?.takeUnless { it is JsonNull }?.let { json.decodeFromJsonElement(it) } ?: range.let { val max = YearMonth.parse(month).lengthOfMonth(); DayRange(it.from.coerceAtMost(max), it.to.coerceAtMost(max)) },
+                hours = old["hours"]?.takeUnless { it is JsonNull }?.let { hours(it) } ?: base.hours,
+                createdAt = old["createdAt"]?.takeUnless { it is JsonNull }?.jsonPrimitive?.content ?: YearMonth.parse(month).atDay(1).toString(),
+            )
+        }
+        return FinSupportSettings(schedules = FinSupportSchedules(MaterialAidSchedule(base, overrides)))
+    }
+
+    private fun validateRange(range: DayRange, max: Int) {
+        require(range.from in 1..max && range.to in range.from..max) { "Некорректный диапазон дней (1–$max)" }
     }
 
     private fun validateHours(hours: ScheduleHours) {
-        val pattern = Regex("([01]\\d|2[0-3]):[0-5]\\d")
         require(hours.days.keys == weekDays.toSet()) { "Укажите график для всех дней недели" }
-        hours.days.values.forEach { day ->
-            require(!day.enabled || (pattern.matches(day.from) && pattern.matches(day.to) && day.from < day.to)) {
-                "Укажите время в формате ЧЧ:ММ, начало должно быть раньше окончания"
-            }
-        }
-    }
-
-    private fun normalize(settings: FinSupportSettings): FinSupportSettings {
-        val schedule = settings.schedules.materialAid
-        return FinSupportSettings(FinSupportSchedules(schedule.copy(
-            default = schedule.default.copy(hours = schedule.default.hours.normalized()),
-            overrides = schedule.overrides.mapValues { (_, override) -> override.copy(hours = override.hours?.normalized()) },
-        )))
+        val pattern = Regex("([01]\\d|2[0-3]):[0-5]\\d")
+        hours.days.values.forEach { require(!it.enabled || (pattern.matches(it.from) && pattern.matches(it.to) && it.from < it.to)) { "Некорректный интервал времени" } }
     }
 }

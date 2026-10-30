@@ -20,6 +20,8 @@ import '@m3e/web/datepicker'
 import '@m3e/web/tabs'
 import '@m3e/web/tooltip'
 import '@m3e/web/checkbox'
+import '@m3e/web/drawer-container'
+import '@m3e/web/select'
 import App from './App.vue'
 import './style.css'
 

@@ -3,6 +3,9 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api } from '../api'
 import FinSupportScheduleForm from '../components/FinSupportScheduleForm.vue'
 
+const headerMedia = matchMedia('(max-width: 700px)')
+const mobileHeader = ref(headerMedia.matches)
+function resizeHeader(event) { mobileHeader.value = event.matches }
 const settings = ref(null)
 const initial = ref('')
 const busy = ref(false)
@@ -11,7 +14,8 @@ const error = ref('')
 const saved = ref(false)
 const month = ref('')
 const overrideActive = ref(false)
-const draft = ref({ enabled: true, dayRange: { from: 1, to: 10 }, hours: { days: {} } })
+const draftInitial = ref('')
+const draft = ref({ enabled: true, dayRange: { from: 1, to: 10 }, hours: { days: {} }, excludedDates: [] })
 const schedule = computed(() => settings.value?.schedules.materialAid)
 const editedSettings = computed(() => {
   if (!settings.value) return null
@@ -21,28 +25,19 @@ const editedSettings = computed(() => {
     if (overrideActive.value) override.enabled = draft.value.enabled
     if (overrideActive.value) override.dayRange = { ...draft.value.dayRange }
     if (overrideActive.value) override.hours = { ...draft.value.hours }
+    override.excludedDates = [...draft.value.excludedDates]
     if (overrides[month.value]?.createdAt) override.createdAt = overrides[month.value].createdAt
     overrides[month.value] = override
   }
-  return { schedules: { materialAid: { ...schedule.value, overrides } } }
+  return { ...settings.value, schedules: { materialAid: { ...schedule.value, overrides } } }
 })
 const changed = computed(() => editedSettings.value && JSON.stringify(editedSettings.value) !== initial.value)
 const monthStart = computed(() => new Date(`${month.value}-01T00:00:00`))
 const monthEnd = computed(() => new Date(monthStart.value.getFullYear(), monthStart.value.getMonth() + 1, 0))
-const monthLabel = computed(() => historyMonth(month.value))
 const history = computed(() => Object.entries(schedule.value?.overrides || {}).sort(([a], [b]) => b.localeCompare(a)))
-const defaultDayErrors = computed(() => {
-  const range = schedule.value?.default.dayRange
-  if (!range) return { from: '', to: '' }
-  return {
-    from: dayError(range.from),
-    to: dayError(range.to) || (!dayError(range.from) && range.to < range.from ? 'Окончание не может быть раньше начала' : ''),
-  }
-})
 const overrideDayErrors = computed(() => {
   const range = draft.value.dayRange
   const validate = value => {
-    if (typeof value === 'string') return parseDate(value) ? 'Выберите дату текущего месяца' : 'Введите существующую дату: ДД.ММ.ГГГГ'
     return dayError(value, monthEnd.value.getDate())
   }
   return {
@@ -50,7 +45,7 @@ const overrideDayErrors = computed(() => {
     to: validate(range.to) || (!validate(range.from) && range.to < range.from ? 'Окончание не может быть раньше начала' : ''),
   }
 })
-const defaultsValid = computed(() => schedule.value && !Object.values(defaultDayErrors.value).some(Boolean) && validHours(schedule.value.default.hours))
+const defaultsValid = computed(() => schedule.value && Object.entries(schedule.value.default.months).every(([key, rule]) => !rule.enabled || (!dayError(rule.dayRange.from, new Date(2000, Number(key), 0).getDate()) && !dayError(rule.dayRange.to, new Date(2000, Number(key), 0).getDate()) && rule.dayRange.from <= rule.dayRange.to)) && validHours(schedule.value.default.hours))
 const overrideValid = computed(() => !overrideActive.value || (validHours(draft.value.hours) && !Object.values(overrideDayErrors.value).some(Boolean)))
 
 function currentMonth() {
@@ -64,30 +59,37 @@ function validHours(hours) {
   const pattern = /^([01]\d|2[0-3]):[0-5]\d$/
   return Object.values(hours.days).every(day => !day.enabled || (pattern.test(day.from) && pattern.test(day.to) && day.from < day.to))
 }
-function parseDate(value) {
-  if (!/^\d{2}\.\d{2}\.\d{4}$/.test(value)) return null
-  const [day, month, year] = value.split('.').map(Number)
-  const date = new Date(year, month - 1, day)
-  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? date : null
-}
 function copy(value) { return JSON.parse(JSON.stringify(value)) }
 function resetDraft() {
   overrideActive.value = false
-  draft.value = copy(schedule.value.default)
+  const base = schedule.value.default
+  const rule = base.months[month.value.slice(5)]
+  draft.value = copy({ enabled: base.enabled && rule.enabled, dayRange: { from: Math.min(rule.dayRange.from, monthEnd.value.getDate()), to: Math.min(rule.dayRange.to, monthEnd.value.getDate()) }, hours: base.hours, excludedDates: [] })
+  draftInitial.value = JSON.stringify(draft.value)
 }
-function toggleOverride(checked) {
+function toggleOverride(checked) { resetDraft(); overrideActive.value = checked }
+function stageOverride() {
+  if (overrideActive.value && JSON.stringify(draft.value) !== draftInitial.value) settings.value = copy(editedSettings.value)
+}
+function changeMonth(value) {
+  if (!overrideValid.value) { error.value = 'Исправьте ошибки перед сменой месяца.'; return }
+  stageOverride()
+  month.value = value
   resetDraft()
-  overrideActive.value = checked
+  overrideActive.value = true
 }
-function toggleMonth(value, checked) {
-  schedule.value.default.months = checked
-    ? [...schedule.value.default.months, value].sort((a, b) => a - b)
-    : schedule.value.default.months.filter(month => month !== value)
-}
-const months = Array.from({ length: 12 }, (_, index) => new Date(2026, index, 1).toLocaleDateString('ru-RU', { month: 'long' }))
+const monthOptions = computed(() => {
+  const now = new Date(`${currentMonth()}-01T00:00:00`)
+  const options = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth() + index, 1)
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+  })
+  return options
+})
 function describe(override) {
   return [
     override.enabled == null ? null : override.enabled ? 'Приём открыт' : 'Приём закрыт',
+    override.excludedDates?.length ? `Без приёма: ${override.excludedDates.length} дат` : null,
     override.dayRange ? `${override.dayRange.from}–${override.dayRange.to} числа` : null,
     override.hours ? Object.entries(override.hours.days).filter(([, day]) => day.enabled).map(([key, day]) => `${{ monday: 'Пн', tuesday: 'Вт', wednesday: 'Ср', thursday: 'Чт', friday: 'Пт', saturday: 'Сб', sunday: 'Вс' }[key]} ${day.from}–${day.to}`).join(', ') || 'Нет рабочих дней' : null,
   ].filter(Boolean).join(' · ')
@@ -106,10 +108,6 @@ async function save() {
   if (!changed.value) return true
   if (!defaultsValid.value || !overrideValid.value || busy.value) {
     error.value = 'Исправьте ошибки в полях перед сохранением.'
-    return false
-  }
-  if (month.value !== currentMonth()) {
-    error.value = 'Месяц изменился. Обновите страницу перед сохранением.'
     return false
   }
   busy.value = true
@@ -137,9 +135,10 @@ function beforeUnload(event) {
   event.returnValue = ''
 }
 defineExpose({ beforeLeave })
-onBeforeUnmount(() => removeEventListener('beforeunload', beforeUnload))
+onBeforeUnmount(() => { removeEventListener('beforeunload', beforeUnload); headerMedia.removeEventListener('change', resizeHeader) })
 onMounted(async () => {
   addEventListener('beforeunload', beforeUnload)
+  headerMedia.addEventListener('change', resizeHeader)
   month.value = currentMonth()
   try {
     settings.value = await api('/api/finsupport')
@@ -152,13 +151,17 @@ onMounted(async () => {
 
 <template>
   <div id="finsupport-scroll" class="finsupport-page">
-    <m3e-app-bar class="finsupport-header" for="finsupport-scroll">
+    <m3e-app-bar v-if="!mobileHeader" class="finsupport-header" size="small" for="finsupport-scroll">
       <h1 slot="title">Материальная поддержка</h1>
       <div slot="trailing" class="actions-wrapper">
         <m3e-button variant="text" :disabled="!changed || busy" @click="reset">Сбросить</m3e-button>
         <m3e-button variant="filled" :disabled="!changed || !defaultsValid || !overrideValid || busy" @click="save"><m3e-icon slot="icon" name="save" />{{ busy ? 'Сохранение…' : 'Сохранить' }}</m3e-button>
       </div>
     </m3e-app-bar>
+    <Teleport defer v-if="mobileHeader" to="#mobile-page-actions">
+      <m3e-icon-button :disabled="!changed || busy" aria-label="Сбросить изменения" title="Сбросить изменения" @click="reset"><m3e-icon name="restart_alt" /></m3e-icon-button>
+      <m3e-icon-button :disabled="!changed || !defaultsValid || !overrideValid || busy" aria-label="Сохранить изменения" title="Сохранить изменения" @click="save"><m3e-icon name="save" /></m3e-icon-button>
+    </Teleport>
     <div v-if="error" class="message error-message" role="alert"><m3e-icon name="error" />{{ error }}</div>
     <div v-if="saved && !changed" class="message success-message" role="status"><m3e-icon name="check_circle" />Настройки сохранены</div>
     <div v-if="loading" class="empty-state"><m3e-circular-progress-indicator indeterminate aria-label="Загрузка настроек" /></div>
@@ -168,26 +171,24 @@ onMounted(async () => {
           <h2 class="form-title"><m3e-icon name="event_repeat" />Постоянный график</h2>
           <div class="finsupport-fields">
 
-            <FinSupportScheduleForm :value="schedule.default" :disabled="busy" prefix="default" split-cards :day-errors="defaultDayErrors" />
-            <section class="reception-months">
-              <h3>Месяцы приёма</h3>
-              <m3e-card class="finsupport-card months-card">
-              <div slot="content">
-              <label v-for="(label, index) in months" :key="index" class="finsupport-toggle finsupport-month">
-                <span>{{ label }}</span><m3e-checkbox :checked="schedule.default.months.includes(index + 1)" :disabled="busy" :aria-label="label" @change="toggleMonth(index + 1, $event.target.checked)" />
-              </label>
-              </div>
-              </m3e-card>
-            </section>
+            <FinSupportScheduleForm :value="schedule.default" :disabled="busy" prefix="default" split-cards />
+
           </div>
         </section>
 
         <section>
-          <h2 class="form-title"><m3e-icon name="edit_calendar" />Исключение на {{ monthLabel }}</h2>
+          <h2 class="form-title"><m3e-icon name="edit_calendar" />Исключение на месяц</h2>
+
         <m3e-card variant="filled" class="finsupport-card">
           <div slot="content" class="finsupport-fields">
             <m3e-button v-if="!overrideActive" variant="filled" :disabled="busy" @click="toggleOverride(true)">Добавить исключение</m3e-button>
-            <FinSupportScheduleForm v-if="overrideActive" :value="draft" :disabled="busy" prefix="override" :day-errors="overrideDayErrors" :max-day="monthEnd.getDate()" />
+          <m3e-form-field v-if="overrideActive" variant="outlined" class="month-select" hide-subscript="always">
+            <label slot="label" for="override-month">Месяц</label>
+            <m3e-select id="override-month" :value.prop="month" :disabled="busy" @change="changeMonth($event.target.value)">
+              <m3e-option v-for="option in monthOptions" :key="option" :value="option" :selected="option === month">{{ historyMonth(option) }}</m3e-option>
+            </m3e-select>
+          </m3e-form-field>
+            <FinSupportScheduleForm v-if="overrideActive" :key="month" :value="draft" :disabled="busy" prefix="override" :day-errors="overrideDayErrors" :max-day="monthEnd.getDate()" :month="month" />
             <m3e-button v-if="overrideActive" variant="outlined" :disabled="busy" @click="resetDraft">Отменить добавление исключения</m3e-button>
           </div>
           <div slot="footer" class="finsupport-history">
@@ -216,7 +217,7 @@ onMounted(async () => {
 .months-card { display: block; }
 .finsupport-page { box-sizing: border-box; height: 100%; overflow: auto; padding: 0 32px 40px; color: var(--md-sys-color-on-surface); }
 .finsupport-header { position: sticky; top: 0; z-index: 10; margin-bottom: 20px; --m3e-app-bar-container-elevation: none; --m3e-app-bar-container-elevation-on-scroll: none; --m3e-app-bar-container-color: var(--md-sys-color-surface-container-low); --m3e-app-bar-container-color-on-scroll: var(--md-sys-color-surface-container-low); }
-h1 { margin: 0; font-size: 32px; font-weight: 400; }
+h1 { margin: 0; font-size: clamp(18px, 3vw, 32px); font-weight: 400; }
 .finsupport-card p { color: var(--md-sys-color-on-surface-variant); margin: 4px 0 0; line-height: 1.4; }
 .finsupport-cards { display: grid; grid-template-columns: minmax(380px, 1fr) minmax(380px, 1fr); align-items: start; gap: 24px; max-width: 1280px; }
 .finsupport-card { min-width: 0; --m3e-card-padding: 20px; --m3e-card-shape: 24px; --m3e-filled-card-container-color: var(--md-sys-color-surface-container-lowest); }
@@ -236,5 +237,9 @@ h3 { font-size: 14px; font-weight: 500; margin: 0 0 8px 16px; }
 .finsupport-history m3e-list-item { --m3e-list-item-container-color: transparent; }
 @media (max-width: 1100px) { .finsupport-page { padding: 0 20px 32px; } .finsupport-cards { gap: 16px; grid-template-columns: 1fr 1fr; } }
 @media (max-width: 1000px) { .finsupport-cards { grid-template-columns: 1fr; } .finsupport-header { align-items: flex-start; flex-direction: column; gap: 16px; } }
+@container (max-width: 860px) { .finsupport-cards { display: flex; flex-direction: column; } .finsupport-cards > section { width: 100%; min-width: 0; } }
+.month-select { width: 100%; --md-sys-density-scale: -3; margin-bottom: 4px; }
+@media (max-width: 600px) { .finsupport-header { position: sticky; } .finsupport-header .actions-wrapper { gap: 4px; } .finsupport-header m3e-button { --md-sys-density-scale: -2; } h1 { font-size: 22px; white-space: normal; line-height: 1.2; } .finsupport-cards { display: flex; flex-direction: column; } .finsupport-cards > section { width: 100%; min-width: 0; } .finsupport-card { --m3e-card-padding: 12px; } }
+@media (max-width: 700px) { .form-title { margin-top: 32px; } }
 @media (max-width: 520px) { .finsupport-page { padding: 0 12px 12px; } .finsupport-card { --m3e-card-padding: 16px; } }
 </style>
