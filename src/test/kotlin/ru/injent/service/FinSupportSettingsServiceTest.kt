@@ -121,6 +121,54 @@ class FinSupportSettingsServiceTest {
     }
 
     @Test
+    fun `comments and details links persist and missing fields remain compatible`() = withStore { store, database, file ->
+        val service = FinSupportSettingsService(store.preferences, clock)
+        val oldJson = Json { encodeDefaults = true }.encodeToJsonElement(settings()).jsonObject
+        val schedule = oldJson.getValue("schedules").jsonObject.getValue("materialAid").jsonObject
+        val oldDefault = JsonObject(schedule.getValue("default").jsonObject - "comment" - "detailsUrl")
+        val old = JsonObject(oldJson + ("schedules" to JsonObject(mapOf("materialAid" to JsonObject(schedule + ("default" to oldDefault))))))
+        store.preferences.edit { it[finSupportSettingsKey] = old.toString() }
+        assertEquals("", service.get().schedules.materialAid.default.comment)
+        assertEquals("", service.get().schedules.materialAid.default.detailsUrl)
+        for ((link, normalized) in mapOf(
+            "example.org/support?q=1" to "https://example.org/support?q=1",
+            " https://example.org/help " to "https://example.org/help",
+            "http://example.org" to "http://example.org",
+            "" to "",
+        )) {
+            val saved = service.update(settings(
+                ScheduleDefaults(comment = "Приём по записи", detailsUrl = link),
+                mapOf("2026-11" to ScheduleOverride(enabled = false, comment = "Ремонт")),
+            ))
+            assertEquals(normalized, saved.schedules.materialAid.default.detailsUrl)
+            assertEquals("Приём по записи", saved.schedules.materialAid.default.comment)
+            assertEquals("Ремонт", saved.schedules.materialAid.overrides.getValue("2026-11").comment)
+            assertEquals(saved, service.getActive())
+        }
+        val before = service.get()
+        for (link in listOf("not a link", "javascript:alert(1)", "data:text/html,test", "ftp://example.org", "https://", "https://user:password@example.org", "https://example.org:99999")) {
+            assertFailsWith<IllegalArgumentException>(link) { service.update(settings(ScheduleDefaults(detailsUrl = link))) }
+            assertEquals(before, service.get())
+        }
+        store.close()
+        ServerSettingsStore(database, file).use { reopened -> assertEquals(before, FinSupportSettingsService(reopened.preferences, clock).get()) }
+    }
+
+    @Test
+    fun `comments are limited to 120 characters and two lines in defaults and overrides`() = withStore { store, _, _ ->
+        val service = FinSupportSettingsService(store.preferences, clock)
+        val valid = service.update(settings(
+            ScheduleDefaults(comment = "a".repeat(59) + "\n" + "b".repeat(60)),
+            mapOf("2026-11" to ScheduleOverride(comment = "Первая строка\nВторая строка")),
+        ))
+        for (comment in listOf("a".repeat(121), "a\nb\nc", "a\r\nb\r\nc")) {
+            assertFailsWith<IllegalArgumentException> { service.update(settings(ScheduleDefaults(comment = comment))) }
+            assertFailsWith<IllegalArgumentException> { service.update(settings(overrides = mapOf("2026-11" to ScheduleOverride(comment = comment)))) }
+            assertEquals(valid, service.get())
+        }
+    }
+
+    @Test
     fun `override cleanup uses creation date only on updates and preserves replacement timestamp`() = withStore { store, _, _ ->
         fun at(day: String) = FinSupportSettingsService(store.preferences, Clock.fixed(Instant.parse("${day}T09:00:00Z"), ZoneId.of("Europe/Moscow")))
         val original = at("2026-07-30").update(settings(overrides = mapOf("2026-12" to ScheduleOverride())))

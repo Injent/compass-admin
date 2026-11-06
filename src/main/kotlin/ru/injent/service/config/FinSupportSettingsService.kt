@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
+import java.net.URI
 import java.time.Clock
 import java.time.LocalDate
 import java.time.Month
@@ -32,6 +33,8 @@ data class MaterialAidSchedule(
 
 @Serializable
 data class ScheduleDefaults(
+    @EncodeDefault val comment: String = "",
+    @EncodeDefault val detailsUrl: String = "",
     @EncodeDefault val enabled: Boolean = true,
     @EncodeDefault val months: Map<String, ReceptionMonth> = Month.entries.associate { it.name to ReceptionMonth() },
     @EncodeDefault val hours: ScheduleHours = ScheduleHours(),
@@ -54,6 +57,7 @@ data class WorkDay(@EncodeDefault val enabled: Boolean = true, @EncodeDefault va
 
 @Serializable
 data class ScheduleOverride(
+    @EncodeDefault val comment: String = "",
     @EncodeDefault val enabled: Boolean = true,
     @EncodeDefault val dayRange: DayRange = DayRange(1, 10),
     @EncodeDefault val hours: ScheduleHours = ScheduleHours(),
@@ -102,7 +106,9 @@ class FinSupportSettingsService(
     suspend fun update(settings: FinSupportSettings): FinSupportSettings {
         val preferences = store.edit { preferences ->
             require(settings.schemaVersion == 3 && settings.timeZone == "Europe/Moscow") { "Неподдерживаемая схема или часовой пояс" }
-            val schedule = settings.schedules.materialAid
+            val input = settings.schedules.materialAid
+            val schedule = input.copy(default = input.default.copy(detailsUrl = normalizeDetailsUrl(input.default.detailsUrl)))
+            validateComment(schedule.default.comment)
             val existing = read(preferences).schedules.materialAid.overrides
             val today = LocalDate.now(clock)
             require(schedule.default.months.keys == Month.entries.map { it.name }.toSet()) { "Укажите все 12 месяцев" }
@@ -112,6 +118,7 @@ class FinSupportSettingsService(
             schedule.default.excludedDates.forEach { require(Regex("\\d{2}-\\d{2}").matches(it) && runCatching { MonthDay.parse("--$it") }.isSuccess) { "Некорректная ежегодная дата" } }
             val overrides = schedule.overrides.mapValues { (month, override) ->
                 require(Regex("\\d{4}-(0[1-9]|1[0-2])").matches(month)) { "Некорректный месяц" }
+                validateComment(override.comment)
                 val period = YearMonth.parse(month)
                 validateRange(override.dayRange, period.lengthOfMonth())
                 validateHours(override.hours)
@@ -180,6 +187,29 @@ class FinSupportSettingsService(
             )
         }
         return FinSupportSettings(schedules = FinSupportSchedules(MaterialAidSchedule(base, overrides)))
+    }
+
+    private fun validateComment(comment: String) {
+        require(comment.length <= 120 && comment.lineSequence().take(3).count() <= 2) {
+            "Комментарий должен содержать не более 120 символов и двух строк"
+        }
+    }
+
+    private fun normalizeDetailsUrl(value: String): String {
+        val link = value.trim()
+        if (link.isEmpty()) return ""
+        require(link.none { it.isWhitespace() }) { "Ссылка не должна содержать пробелы" }
+        val normalized = when {
+            link.startsWith("//") -> "https:$link"
+            "://" in link -> link
+            else -> "https://$link"
+        }
+        val uri = runCatching { URI(normalized) }.getOrNull()
+        require(uri != null && uri.scheme.lowercase() in setOf("http", "https") && uri.userInfo == null &&
+            uri.host != null && ('.' in uri.host || uri.host == "localhost") && uri.port in -1..65535) {
+            "Укажите корректную HTTP или HTTPS ссылку"
+        }
+        return normalized
     }
 
     private fun validateRange(range: DayRange, max: Int) {

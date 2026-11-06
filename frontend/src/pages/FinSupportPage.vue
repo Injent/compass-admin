@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api } from '../api'
+import { normalizeDetailsUrl } from '../detailsUrl'
 import { months, weekdayAbbreviations } from '../scheduleCalendar'
 import FinSupportScheduleForm from '../components/FinSupportScheduleForm.vue'
 
@@ -22,7 +23,7 @@ const editedSettings = computed(() => {
   if (!settings.value) return null
   const overrides = { ...schedule.value.overrides }
   if (overrideActive.value) {
-    const override = {}
+    const override = { comment: draft.value.comment }
     if (overrideActive.value) override.enabled = draft.value.enabled
     if (overrideActive.value) override.dayRange = { ...draft.value.dayRange }
     if (overrideActive.value) override.hours = { ...draft.value.hours }
@@ -46,7 +47,7 @@ const overrideDayErrors = computed(() => {
     to: validate(range.to) || (!validate(range.from) && range.to < range.from ? 'Окончание не может быть раньше начала' : ''),
   }
 })
-const defaultsValid = computed(() => schedule.value && Object.entries(schedule.value.default.months).every(([key, rule]) => !rule.enabled || (!dayError(rule.dayRange.from, months.find(month => month.key === key).max) && !dayError(rule.dayRange.to, months.find(month => month.key === key).max) && rule.dayRange.from <= rule.dayRange.to)) && validHours(schedule.value.default.hours))
+const defaultsValid = computed(() => schedule.value && normalizeDetailsUrl(schedule.value.default.detailsUrl || '') !== null && Object.entries(schedule.value.default.months).every(([key, rule]) => !rule.enabled || (!dayError(rule.dayRange.from, months.find(month => month.key === key).max) && !dayError(rule.dayRange.to, months.find(month => month.key === key).max) && rule.dayRange.from <= rule.dayRange.to)) && validHours(schedule.value.default.hours))
 const overrideValid = computed(() => !overrideActive.value || (validHours(draft.value.hours) && !Object.values(overrideDayErrors.value).some(Boolean)))
 
 function currentMonth() {
@@ -65,7 +66,7 @@ function resetDraft() {
   overrideActive.value = false
   const base = schedule.value.default
   const rule = base.months[months[Number(month.value.slice(5)) - 1].key]
-  draft.value = copy({ enabled: base.enabled && rule.enabled, dayRange: { from: Math.min(rule.dayRange.from, monthEnd.value.getDate()), to: Math.min(rule.dayRange.to, monthEnd.value.getDate()) }, hours: base.hours, excludedDates: [] })
+  draft.value = copy({ comment: base.comment || '', enabled: base.enabled && rule.enabled, dayRange: { from: Math.min(rule.dayRange.from, monthEnd.value.getDate()), to: Math.min(rule.dayRange.to, monthEnd.value.getDate()) }, hours: base.hours, excludedDates: [] })
   draftInitial.value = JSON.stringify(draft.value)
 }
 function toggleOverride(checked) { resetDraft(); overrideActive.value = checked }

@@ -1,9 +1,18 @@
 <script setup>
+import { computed } from 'vue'
+import { normalizeDetailsUrl } from '../detailsUrl'
 import ExcludedDates from './ExcludedDates.vue'
 import { months, weekdays } from '../scheduleCalendar'
 const props = defineProps({ value: Object, disabled: Boolean, prefix: String, dayErrors: Object, maxDay: { type: Number, default: 31 }, splitCards: Boolean, month: String })
+const linkError = computed(() => normalizeDetailsUrl(props.value.detailsUrl || '') === null ? 'Укажите корректную ссылку, например example.org' : '')
 function rangeError(range, max) { return !Number.isInteger(range.from) || !Number.isInteger(range.to) || range.from < 1 || range.to > max || range.from > range.to ? `Укажите диапазон от 1 до ${max}` : '' }
 const active = key => !props.disabled && (props.prefix !== 'override' || key === 'enabled' || props.value.enabled)
+function updateComment(event) {
+  const lines = event.target.value.replace(/\r\n?/g, '\n').split('\n')
+  const text = (lines.length > 2 ? `${lines[0]}\n${lines.slice(1).join(' ')}` : lines.join('\n')).slice(0, 120)
+  props.value.comment = text
+  event.target.value = text
+}
 function formatTime(event) {
   const digits = event.target.value.replace(/\D/g, '').slice(0, 4)
   event.target.value = digits.length > 2 ? `${digits.slice(0, 2)}:${digits.slice(2)}` : digits
@@ -27,6 +36,18 @@ const vValidation = { mounted: validity, updated: validity }
       <component :is="splitCards ? 'm3e-card' : 'div'" class="section-content" :class="{ padded: splitCards }">
       <div :slot="splitCards ? 'content' : undefined">
       <label class="checkbox-row"><m3e-checkbox :checked="value.enabled" :disabled="!active('enabled')" :aria-label="`${prefix}: приём заявлений открыт`" @change="value.enabled = $event.target.checked" />Приём заявлений открыт</label>
+      <div class="reception-fields">
+        <m3e-form-field variant="outlined" hide-subscript="never">
+          <label slot="label" :for="`${prefix}-comment`">Комментарий</label>
+          <textarea :id="`${prefix}-comment`" :value="value.comment" rows="2" maxlength="120" :disabled="disabled" @input="updateComment" />
+          <span slot="hint" class="comment-count">{{ (value.comment || '').length }}/120</span>
+        </m3e-form-field>
+        <m3e-form-field v-if="splitCards" variant="outlined" :hide-subscript="linkError ? 'never' : 'always'" class="details-field">
+          <label slot="label" :for="`${prefix}-details-url`">Действие по нажатию кнопки «Подробнее»</label>
+          <input :id="`${prefix}-details-url`" v-model="value.detailsUrl" v-validation="linkError" placeholder="https://..." type="text" inputmode="url" :disabled="disabled" />
+          <span slot="error">{{ linkError }}</span>
+        </m3e-form-field>
+      </div>
       </div>
       </component>
     </section>
@@ -85,6 +106,10 @@ const vValidation = { mounted: validity, updated: validity }
 </template>
 
 <style scoped>
+textarea { resize: none; }
+.comment-count { display: block; text-align: right; }
+.reception-fields { display: grid; gap: 16px; margin-top: 12px; }
+.details-field { --m3e-form-field-label-font-size: 11px; }
 .compact-content { padding: 20px; }
 @media (max-width: 600px) { .compact-content { padding: 16px 12px; } .padded { --m3e-card-padding: 12px; } }
 .section-content { display: block; }
