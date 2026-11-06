@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api } from '../api'
+import { months, weekdayAbbreviations } from '../scheduleCalendar'
 import FinSupportScheduleForm from '../components/FinSupportScheduleForm.vue'
 
 const headerMedia = matchMedia('(max-width: 700px)')
@@ -45,7 +46,7 @@ const overrideDayErrors = computed(() => {
     to: validate(range.to) || (!validate(range.from) && range.to < range.from ? 'Окончание не может быть раньше начала' : ''),
   }
 })
-const defaultsValid = computed(() => schedule.value && Object.entries(schedule.value.default.months).every(([key, rule]) => !rule.enabled || (!dayError(rule.dayRange.from, new Date(2000, Number(key), 0).getDate()) && !dayError(rule.dayRange.to, new Date(2000, Number(key), 0).getDate()) && rule.dayRange.from <= rule.dayRange.to)) && validHours(schedule.value.default.hours))
+const defaultsValid = computed(() => schedule.value && Object.entries(schedule.value.default.months).every(([key, rule]) => !rule.enabled || (!dayError(rule.dayRange.from, months.find(month => month.key === key).max) && !dayError(rule.dayRange.to, months.find(month => month.key === key).max) && rule.dayRange.from <= rule.dayRange.to)) && validHours(schedule.value.default.hours))
 const overrideValid = computed(() => !overrideActive.value || (validHours(draft.value.hours) && !Object.values(overrideDayErrors.value).some(Boolean)))
 
 function currentMonth() {
@@ -63,7 +64,7 @@ function copy(value) { return JSON.parse(JSON.stringify(value)) }
 function resetDraft() {
   overrideActive.value = false
   const base = schedule.value.default
-  const rule = base.months[month.value.slice(5)]
+  const rule = base.months[months[Number(month.value.slice(5)) - 1].key]
   draft.value = copy({ enabled: base.enabled && rule.enabled, dayRange: { from: Math.min(rule.dayRange.from, monthEnd.value.getDate()), to: Math.min(rule.dayRange.to, monthEnd.value.getDate()) }, hours: base.hours, excludedDates: [] })
   draftInitial.value = JSON.stringify(draft.value)
 }
@@ -91,7 +92,7 @@ function describe(override) {
     override.enabled == null ? null : override.enabled ? 'Приём открыт' : 'Приём закрыт',
     override.excludedDates?.length ? `Без приёма: ${override.excludedDates.length} дат` : null,
     override.dayRange ? `${override.dayRange.from}–${override.dayRange.to} числа` : null,
-    override.hours ? Object.entries(override.hours.days).filter(([, day]) => day.enabled).map(([key, day]) => `${{ monday: 'Пн', tuesday: 'Вт', wednesday: 'Ср', thursday: 'Чт', friday: 'Пт', saturday: 'Сб', sunday: 'Вс' }[key]} ${day.from}–${day.to}`).join(', ') || 'Нет рабочих дней' : null,
+    override.hours ? Object.entries(override.hours.days).filter(([, day]) => day.enabled).map(([key, day]) => `${weekdayAbbreviations[key]} ${day.from}–${day.to}`).join(', ') || 'Нет рабочих дней' : null,
   ].filter(Boolean).join(' · ')
 }
 function historyMonth(value) {

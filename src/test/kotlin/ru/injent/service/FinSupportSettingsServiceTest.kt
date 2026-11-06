@@ -1,8 +1,9 @@
 package ru.injent.service
 
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
+import kotlinx.coroutines.flow.first
+import androidx.datastore.preferences.core.edit
+import kotlinx.serialization.json.*
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.SchemaUtils
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
@@ -41,18 +42,51 @@ class FinSupportSettingsServiceTest {
         }
         val service = FinSupportSettingsService(store.preferences, clock)
         val loaded = service.get()
-        assertEquals(2, loaded.schemaVersion)
+        assertEquals(3, loaded.schemaVersion)
         assertEquals("Europe/Moscow", loaded.timeZone)
         val base = loaded.schedules.materialAid.default
-        assertEquals(29, base.months.getValue("02").dayRange.to)
-        assertFalse(base.months.getValue("01").enabled)
-        assertEquals("09:00", base.hours.days.getValue("monday").from)
+        assertEquals(29, base.months.getValue("FEBRUARY").dayRange.to)
+        assertFalse(base.months.getValue("JANUARY").enabled)
+        assertEquals("09:00", base.hours.days.getValue("MONDAY").from)
         assertFalse(loaded.schedules.materialAid.overrides.getValue("2026-10").enabled)
         assertEquals(loaded, service.update(loaded))
     }
 
     @Test
-    fun `v2 JSON is explicit and preferences survive reopening`() = withStore { store, database, file ->
+    fun `v2 migration persists enum keys and preserves dates overrides and month rules`() = withStore { store, _, _ ->
+        val original = settings(
+            ScheduleDefaults(excludedDates = listOf("01-01", "02-29")),
+            mapOf("2026-11" to ScheduleOverride(enabled = false, excludedDates = listOf("2026-11-06"), createdAt = "2026-10-01")),
+        )
+        val json = Json { encodeDefaults = true; explicitNulls = false }
+        val root = json.encodeToJsonElement(original).jsonObject
+        val schedule = root.getValue("schedules").jsonObject.getValue("materialAid").jsonObject
+        fun oldHours(value: JsonElement): JsonObject = JsonObject(mapOf("days" to JsonObject(
+            value.jsonObject.getValue("days").jsonObject.mapKeys { (day, _) -> day.lowercase() },
+        )))
+        val base = schedule.getValue("default").jsonObject
+        val oldBase = JsonObject(base + ("months" to JsonObject(base.getValue("months").jsonObject.mapKeys { (month, _) ->
+            "%02d".format(kotlinx.datetime.Month.valueOf(month).ordinal + 1)
+        })) + ("hours" to oldHours(base.getValue("hours"))))
+        val oldOverrides = JsonObject(schedule.getValue("overrides").jsonObject.mapValues { (_, element) ->
+            JsonObject(element.jsonObject + ("hours" to oldHours(element.jsonObject.getValue("hours"))))
+        })
+        val legacy = JsonObject(root + ("schemaVersion" to JsonPrimitive(2)) + ("schedules" to JsonObject(mapOf(
+            "materialAid" to JsonObject(schedule + ("default" to oldBase) + ("overrides" to oldOverrides)),
+        )))).toString()
+        store.preferences.edit { it[finSupportSettingsKey] = legacy }
+        val service = FinSupportSettingsService(store.preferences, clock)
+        assertEquals(original, service.get())
+        val stored = json.decodeFromString<FinSupportSettings>(store.preferences.data.first()[finSupportSettingsKey]!!)
+        assertEquals(original, stored)
+        assertEquals(kotlinx.datetime.Month.entries.map { it.name }.toSet(), stored.schedules.materialAid.default.months.keys)
+        assertEquals(kotlinx.datetime.DayOfWeek.entries.map { it.name }.toSet(), stored.schedules.materialAid.default.hours.days.keys)
+        assertEquals(original, service.getActive())
+        assertEquals(original, service.update(original))
+    }
+
+    @Test
+    fun `v3 JSON is explicit and preferences survive reopening`() = withStore { store, database, file ->
         val base = ScheduleDefaults(excludedDates = listOf("01-01", "02-29"))
         val nextMonth = ScheduleOverride(dayRange = DayRange(5, 20), excludedDates = listOf("2027-01-12"))
         val service = FinSupportSettingsService(store.preferences, clock)
@@ -73,15 +107,15 @@ class FinSupportSettingsServiceTest {
         val valid = service.update(settings())
         val base = ScheduleDefaults()
         val invalid = listOf(
-            settings(base.copy(months = base.months - "01")),
-            settings(base.copy(months = base.months + ("02" to ReceptionMonth(dayRange = DayRange(1, 30))))),
+            settings(base.copy(months = base.months - "JANUARY")),
+            settings(base.copy(months = base.months + ("FEBRUARY" to ReceptionMonth(dayRange = DayRange(1, 30))))),
             settings(base.copy(excludedDates = listOf("02-30"))),
             settings(base.copy(excludedDates = listOf("01-01", "01-01"))),
             settings(overrides = mapOf("2027-02" to ScheduleOverride(dayRange = DayRange(1, 29)))),
             settings(overrides = mapOf("2027-02" to ScheduleOverride(excludedDates = listOf("2027-03-01")))),
             settings(overrides = mapOf("2027-02" to ScheduleOverride(excludedDates = listOf("2027-02-30")))),
             settings(overrides = mapOf("bad" to ScheduleOverride())),
-            settings(base.copy(hours = ScheduleHours(base.hours.days + ("monday" to WorkDay(from = "17:00", to = "10:00"))))),
+            settings(base.copy(hours = ScheduleHours(base.hours.days + ("MONDAY" to WorkDay(from = "17:00", to = "10:00"))))),
         )
         invalid.forEach { assertFailsWith<IllegalArgumentException> { service.update(it) }; assertEquals(valid, service.get()) }
     }
@@ -104,12 +138,12 @@ class FinSupportSettingsServiceTest {
     fun `date lookup combines month range weekday and annual exclusions with one-off overrides`() {
         val base = ScheduleDefaults(excludedDates = listOf("10-05"))
         val november = ReceptionMonth(dayRange = DayRange(15, 20))
-        val schedule = MaterialAidSchedule(base.copy(months = base.months + ("11" to november)))
+        val schedule = MaterialAidSchedule(base.copy(months = base.months + ("NOVEMBER" to november)))
         assertNotNull(schedule.hoursOn(LocalDate.parse("2026-10-01")))
         assertNull(schedule.hoursOn(LocalDate.parse("2026-10-05")))
         assertNull(schedule.hoursOn(LocalDate.parse("2026-11-10")))
         assertNotNull(schedule.hoursOn(LocalDate.parse("2026-11-16")))
-        val hours = ScheduleHours(base.hours.days + ("sunday" to WorkDay(enabled = false)))
+        val hours = ScheduleHours(base.hours.days + ("SUNDAY" to WorkDay(enabled = false)))
         val changed = schedule.copy(overrides = mapOf("2026-10" to ScheduleOverride(dayRange = DayRange(1, 20), hours = hours, excludedDates = listOf("2026-10-12"))))
         assertNull(changed.hoursOn(LocalDate.parse("2026-10-04")))
         assertNull(changed.hoursOn(LocalDate.parse("2026-10-05")))

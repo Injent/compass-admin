@@ -3,19 +3,20 @@ package ru.injent.service.config
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
-import kotlinx.coroutines.flow.first
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import java.time.Clock
 import java.time.LocalDate
+import java.time.Month
+import java.time.DayOfWeek
 import java.time.MonthDay
 import java.time.YearMonth
 import java.time.ZoneId
 
 @Serializable
 data class FinSupportSettings(
-    @EncodeDefault val schemaVersion: Int = 2,
+    @EncodeDefault val schemaVersion: Int = 3,
     @EncodeDefault val timeZone: String = "Europe/Moscow",
     @EncodeDefault val schedules: FinSupportSchedules = FinSupportSchedules(),
 )
@@ -32,7 +33,7 @@ data class MaterialAidSchedule(
 @Serializable
 data class ScheduleDefaults(
     @EncodeDefault val enabled: Boolean = true,
-    @EncodeDefault val months: Map<String, ReceptionMonth> = (1..12).associate { "%02d".format(it) to ReceptionMonth() },
+    @EncodeDefault val months: Map<String, ReceptionMonth> = Month.entries.associate { it.name to ReceptionMonth() },
     @EncodeDefault val hours: ScheduleHours = ScheduleHours(),
     @EncodeDefault val excludedDates: List<String> = emptyList(),
 )
@@ -43,7 +44,7 @@ data class ReceptionMonth(@EncodeDefault val enabled: Boolean = true, @EncodeDef
 @Serializable
 data class DayRange(val from: Int, val to: Int)
 
-val weekDays = listOf("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+val weekDays = DayOfWeek.entries.map { it.name }
 
 @Serializable
 data class ScheduleHours(@EncodeDefault val days: Map<String, WorkDay> = weekDays.associateWith { WorkDay() })
@@ -64,12 +65,12 @@ data class ScheduleOverride(
 // annual exclusions always apply, and hours are local to the configured time zone.
 internal fun MaterialAidSchedule.hoursOn(date: LocalDate): WorkDay? {
     val override = overrides[YearMonth.from(date).toString()]
-    val baseMonth = default.months.getValue("%02d".format(date.monthValue))
+    val baseMonth = default.months.getValue(date.month.name)
     if (!(override?.enabled ?: (default.enabled && baseMonth.enabled))) return null
     val range = override?.dayRange ?: baseMonth.dayRange
     if (date.dayOfMonth !in range.from..range.to) return null
     if (date.toString().substring(5) in default.excludedDates || date.toString() in override?.excludedDates.orEmpty()) return null
-    return (override?.hours ?: default.hours).days.getValue(weekDays[date.dayOfWeek.value - 1]).takeIf { it.enabled }
+    return (override?.hours ?: default.hours).days.getValue(date.dayOfWeek.name).takeIf { it.enabled }
 }
 
 class FinSupportSettingsService(
@@ -78,7 +79,14 @@ class FinSupportSettingsService(
 ) {
     private val json = Json { encodeDefaults = true; explicitNulls = false }
 
-    suspend fun get(): FinSupportSettings = read(store.data.first())
+    suspend fun get(): FinSupportSettings {
+        val preferences = store.updateData { current ->
+            val raw = current[finSupportSettingsKey] ?: return@updateData current
+            if (json.parseToJsonElement(raw).jsonObject["schemaVersion"]?.jsonPrimitive?.int == 3) current
+            else current.toMutablePreferences().apply { this[finSupportSettingsKey] = json.encodeToString(read(current)) }
+        }
+        return read(preferences)
+    }
 
     suspend fun getActive(): FinSupportSettings {
         val settings = get()
@@ -93,12 +101,12 @@ class FinSupportSettingsService(
 
     suspend fun update(settings: FinSupportSettings): FinSupportSettings {
         val preferences = store.edit { preferences ->
-            require(settings.schemaVersion == 2 && settings.timeZone == "Europe/Moscow") { "Неподдерживаемая схема или часовой пояс" }
+            require(settings.schemaVersion == 3 && settings.timeZone == "Europe/Moscow") { "Неподдерживаемая схема или часовой пояс" }
             val schedule = settings.schedules.materialAid
             val existing = read(preferences).schedules.materialAid.overrides
             val today = LocalDate.now(clock)
-            require(schedule.default.months.keys == (1..12).map { "%02d".format(it) }.toSet()) { "Укажите все 12 месяцев" }
-            schedule.default.months.forEach { (month, rule) -> validateRange(rule.dayRange, YearMonth.of(2000, month.toInt()).lengthOfMonth()) }
+            require(schedule.default.months.keys == Month.entries.map { it.name }.toSet()) { "Укажите все 12 месяцев" }
+            schedule.default.months.forEach { (month, rule) -> validateRange(rule.dayRange, YearMonth.of(2000, Month.valueOf(month)).lengthOfMonth()) }
             validateHours(schedule.default.hours)
             require(schedule.default.excludedDates.distinct().size == schedule.default.excludedDates.size) { "Даты не должны повторяться" }
             schedule.default.excludedDates.forEach { require(Regex("\\d{2}-\\d{2}").matches(it) && runCatching { MonthDay.parse("--$it") }.isSuccess) { "Некорректная ежегодная дата" } }
@@ -121,8 +129,23 @@ class FinSupportSettingsService(
     private fun read(preferences: Preferences): FinSupportSettings {
         val raw = preferences[finSupportSettingsKey] ?: return FinSupportSettings()
         val root = json.parseToJsonElement(raw).jsonObject
-        if (root["schemaVersion"]?.jsonPrimitive?.int == 2) return json.decodeFromString(raw)
-        return migrate(root)
+        return when (root["schemaVersion"]?.jsonPrimitive?.int ?: 1) {
+            3 -> json.decodeFromString(raw)
+            2 -> {
+                val old = json.decodeFromString<FinSupportSettings>(raw)
+                val schedule = old.schedules.materialAid
+                fun hours(value: ScheduleHours) = value.copy(days = value.days.mapKeys { (day, _) -> day.uppercase() })
+                old.copy(schemaVersion = 3, schedules = FinSupportSchedules(schedule.copy(
+                    default = schedule.default.copy(
+                        months = schedule.default.months.mapKeys { (month, _) -> Month.of(month.toInt()).name },
+                        hours = hours(schedule.default.hours),
+                    ),
+                    overrides = schedule.overrides.mapValues { (_, override) -> override.copy(hours = hours(override.hours)) },
+                )))
+            }
+            1 -> migrate(root)
+            else -> error("Неподдерживаемая версия схемы настроек")
+        }
     }
 
     private fun migrate(root: JsonObject): FinSupportSettings {
@@ -133,14 +156,17 @@ class FinSupportSettingsService(
         fun hours(element: JsonElement?): ScheduleHours {
             if (element == null || element is JsonNull) return ScheduleHours()
             val old = element.jsonObject
-            if (old["days"] != null) return json.decodeFromJsonElement(element)
+            if (old["days"] != null) {
+                val value = json.decodeFromJsonElement<ScheduleHours>(element)
+                return value.copy(days = value.days.mapKeys { (day, _) -> day.uppercase() })
+            }
             return ScheduleHours(weekDays.associateWith { WorkDay(from = old.getValue("from").jsonPrimitive.content, to = old.getValue("to").jsonPrimitive.content) })
         }
         val base = ScheduleDefaults(
             enabled = defaults["enabled"]?.jsonPrimitive?.boolean ?: true,
             months = (1..12).associate { month ->
                 val max = YearMonth.of(2000, month).lengthOfMonth()
-                "%02d".format(month) to ReceptionMonth(month in enabledMonths, DayRange(range.from.coerceAtMost(max), range.to.coerceAtMost(max)))
+                Month.of(month).name to ReceptionMonth(month in enabledMonths, DayRange(range.from.coerceAtMost(max), range.to.coerceAtMost(max)))
             },
             hours = hours(defaults["hours"]),
         )

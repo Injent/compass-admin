@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '../api'
 import VirtualList from '../components/VirtualList.vue'
+import SemesterStartButton from '../components/SemesterStartButton.vue'
 
 const filters = [
   ['all', 'Все'], ['valid', 'Проверенные'], ['invalid', 'С ошибками'], ['deleted', 'Удалённые'],
@@ -263,10 +264,13 @@ onBeforeUnmount(() => { clearTimeout(hideProcessingTimer); events?.close(); appr
               @beforeinput.prevent @click="chooseFilter(value)"
             >{{ label }}</m3e-filter-chip>
           </m3e-filter-chip-set>
-          <div class="approve-wrapper" :title="state.canOpenScheduleApproval ? '' : 'Есть непроверенные или обрабатывающиеся файлы'">
-            <m3e-button variant="tonal" :disabled="!state.canOpenScheduleApproval" @click="openApproval">
-              Подтвердить расписание
-            </m3e-button>
+          <div class="schedule-approval-actions">
+            <SemesterStartButton />
+            <div class="approve-wrapper" :title="state.canOpenScheduleApproval ? '' : 'Есть непроверенные или обрабатывающиеся файлы'">
+              <m3e-button variant="tonal" :disabled="!state.canOpenScheduleApproval" @click="openApproval">
+                Подтвердить расписание
+              </m3e-button>
+            </div>
           </div>
         </div>
 
@@ -344,6 +348,8 @@ onBeforeUnmount(() => { clearTimeout(hideProcessingTimer); events?.close(); appr
 </template>
 
 <style scoped>
+.schedule-approval-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 700px) { .schedule-filter-row { flex-wrap: wrap; } }
 .approval-advanced {
   padding: 0;
   border: 0;

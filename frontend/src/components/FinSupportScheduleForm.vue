@@ -1,8 +1,7 @@
 <script setup>
 import ExcludedDates from './ExcludedDates.vue'
+import { months, weekdays } from '../scheduleCalendar'
 const props = defineProps({ value: Object, disabled: Boolean, prefix: String, dayErrors: Object, maxDay: { type: Number, default: 31 }, splitCards: Boolean, month: String })
-const weekdays = { monday: 'Понедельник', tuesday: 'Вторник', wednesday: 'Среда', thursday: 'Четверг', friday: 'Пятница', saturday: 'Суббота', sunday: 'Воскресенье' }
-const months = Array.from({ length: 12 }, (_, index) => ({ key: String(index + 1).padStart(2, '0'), label: new Date(2000, index, 1).toLocaleDateString('ru-RU', { month: 'long' }), max: new Date(2000, index + 1, 0).getDate() }))
 function rangeError(range, max) { return !Number.isInteger(range.from) || !Number.isInteger(range.to) || range.from < 1 || range.to > max || range.from > range.to ? `Укажите диапазон от 1 до ${max}` : '' }
 const active = key => !props.disabled && (props.prefix !== 'override' || key === 'enabled' || props.value.enabled)
 function formatTime(event) {

@@ -136,7 +136,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.app-drawer { display: block; width: 100%; height: 100dvh; }
+.app-drawer { display: block; width: 100%; height: 100dvh; --m3e-drawer-container-color: var(--md-sys-color-surface-container-low); }
 .nav-column { width: max-content; }
 .mobile-content { height: 100%; container-type: inline-size; }
 .mobile-navigation-bar > span { flex: 1; min-width: 0; }
