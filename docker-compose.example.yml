@@ -12,5 +12,6 @@ services:
     volumes:
       - ./application.yaml:/app/config/application.yaml:ro
       - ./google/credentials.json:/app/google/credentials.json:ro
+      - ./google/firebase-secret.json:/app/google/firebase-secret.json:ro
       - ./tokens:/app/tokens
       - ./data:/app/data

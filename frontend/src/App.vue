@@ -6,6 +6,7 @@ import TeachersPage from './pages/TeachersPage.vue'
 import ConfigPage from './pages/ConfigPage.vue'
 import GuidePage from './pages/GuidePage.vue'
 import FinSupportPage from './pages/FinSupportPage.vue'
+import NotificationsPage from './pages/NotificationsPage.vue'
 
 const route = ref(location.pathname)
 const page = ref(null)
@@ -19,6 +20,7 @@ let leaving = false
 history.replaceState({ ...history.state, compassIndex: historyIndex }, '', location.href)
 const canAccessConfig = Boolean(window.__APP_CONFIG__?.canAccessConfig)
 const canAccessFinSupport = Boolean(window.__APP_CONFIG__?.canAccessFinSupport)
+const canAccessNotifications = Boolean(window.__APP_CONFIG__?.canAccessNotifications)
 const appVersion = window.__APP_CONFIG__?.appVersion
 const sheetsQuota = ref(null)
 let quotaEvents
@@ -35,6 +37,7 @@ const routes = [
   ] : []),
   ...(canAccessFinSupport ? [{ path: '/finsupport', label: 'Материалка', icon: 'volunteer_activism', component: FinSupportPage }] : []),
   ...(canAccessConfig ? [{ path: '/config', label: 'Конфиг', icon: 'call_merge', component: ConfigPage }] : []),
+  ...(canAccessNotifications ? [{ path: '/notifications', label: 'Уведомления', icon: 'notifications', component: NotificationsPage }] : []),
 ]
 const activeRoute = computed(() => routes.find(item => route.value.startsWith(item.path)) || routes[0])
 

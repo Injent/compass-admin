@@ -33,6 +33,14 @@ pnpm install
 pnpm build
 ```
 
+## Firebase Cloud Messaging
+
+The Notifications tab requires the `SUPERUSER` role. The server initializes Firebase Admin SDK on the first send using the service account key at `google/firebase-secret.json`. The SDK takes the project ID from the key. Enable the Firebase Cloud Messaging API for that project and give the service account the `cloudmessaging.messages.create` permission, for example via the `roles/firebasecloudmessaging.admin` role.
+
+Docker Compose mounts the key read-only at `/app/google/firebase-secret.json`. Mobile clients must subscribe to the topics `general`, `schedule` and `important` to receive the corresponding broadcasts. To receive messages through FCM on iOS, configure the app's APNs authentication key in Firebase Console.
+
+Pushes carry `notificationType`, `title`, `body` and `postedAt` directly in FCM `data`. The app displays the notification. The `general`, `schedule` and `important` topics map to `BROADCAST`, `SCHEDULE_CHANGE` and `SEVERE` respectively. Sends to an FCM token use `BROADCAST`. The server sets `postedAt` as an ISO 8601 UTC string. The iOS app needs the Remote notifications background mode to handle data in the background.
+
 ## Schedule confirmation
 
 Confirmation sends only new or changed schedule files. A blue dot at the end of the file-name area marks pending changes. The comparison includes cell values, formulas, merged cells, sheet names and the file name; validation notes and highlighting are ignored.
@@ -45,6 +53,7 @@ The Gradle Ktor plugin builds the image through Jib. Secret and mutable runtime 
 
 - `application.yaml` is mounted as `/app/config/application.yaml`
 - `google/credentials.json` is mounted as `/app/google/credentials.json`
+- `google/firebase-secret.json` is mounted as `/app/google/firebase-secret.json`
 - `tokens` is mounted as `/app/tokens`
 - SQLite data is mounted as `/app/data`
 
@@ -96,6 +105,7 @@ The workflow does not need application secrets because they are only used at run
 ```text
 application.yaml
 google/credentials.json
+google/firebase-secret.json
 tokens/
 data/compassadmin.db
 ```

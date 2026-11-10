@@ -22,6 +22,7 @@ import '@m3e/web/tooltip'
 import '@m3e/web/checkbox'
 import '@m3e/web/drawer-container'
 import '@m3e/web/select'
+import '@m3e/web/radio-group'
 import App from './App.vue'
 import './style.css'
 

@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "ru.injent"
-version = "5"
+version = "6"
 
 tasks.processResources {
     inputs.property("appVersion", project.version.toString())
@@ -121,6 +121,7 @@ dependencies {
     implementation(ktorLibs.client.cio)
     implementation(ktorLibs.client.serialization)
 
+    implementation(libs.firebase.admin)
     implementation(libs.google.auth)
     implementation(libs.google.apiClient)
     implementation(libs.google.drive)

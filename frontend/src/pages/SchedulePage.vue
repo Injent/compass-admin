@@ -116,10 +116,9 @@ function chooseFilter(value) {
   deleteMode.value = false
   selected.value = new Set()
 }
-function toggle(id) {
-  const next = new Set(selected.value)
-  next.has(id) ? next.delete(id) : next.add(id)
-  selected.value = next
+function setSelected(id, checked) {
+  if (checked) selected.value.add(id)
+  else selected.value.delete(id)
 }
 async function upload(event) {
   if (!event.target.files.length) return
@@ -166,9 +165,12 @@ async function restore(fileId) {
   }
 }
 function openFile(file) {
+  if (deleteMode.value) {
+    if (file.status !== 'EMPTY') setSelected(file.fileId, !selected.value.has(file.fileId))
+    return
+  }
   activeFileId.value = file.fileId
-  if (deleteMode.value) toggle(file.fileId)
-  else if (file.status !== 'EMPTY') window.open(`/schedule/editor/${encodeURIComponent(file.fileId)}`, '_blank', 'noopener')
+  if (file.status !== 'EMPTY') window.open(`/schedule/editor/${encodeURIComponent(file.fileId)}`, '_blank', 'noopener')
 }
 function downloadFile(fileId) {
   location.assign(fileId ? `/schedule/download/${encodeURIComponent(fileId)}` : '/schedule/download')
@@ -288,7 +290,12 @@ onBeforeUnmount(() => { clearTimeout(hideProcessingTimer); events?.close(); appr
         <div v-if="loading" class="empty-state"><m3e-circular-progress-indicator indeterminate /></div>
         <VirtualList v-else-if="files.length" :items="files" :item-height="48" class="page-virtual-list">
           <template #default="{ item: file }">
-            <m3e-list-action class="virtual-action" :selected.attr="activeFileId === file.fileId ? '' : null" :aria-current="activeFileId === file.fileId ? 'true' : null" @click="openFile(file)">
+            <m3e-list-action
+              class="virtual-action"
+              :selected.attr="(deleteMode ? selected.has(file.fileId) : activeFileId === file.fileId) ? '' : null"
+              :aria-current="!deleteMode && activeFileId === file.fileId ? 'true' : null"
+              @click="openFile(file)"
+            >
               <div class="schedule-grid">
                 <m3e-shape :name="statusShape(file.status)" :class="{ 'processing-shape': file.status === 'PROCESSING' }" :title="file.statusText" :style="{ '--m3e-shape-container-color': statusColor(file.status), '--m3e-shape-size': '30px' }">
                   <div class="status-icon"><m3e-icon :name="statusIcon(file.status)" variant="rounded" /></div>
@@ -298,7 +305,13 @@ onBeforeUnmount(() => { clearTimeout(hideProcessingTimer); events?.close(); appr
                   <span v-if="file.hasChanges" class="file-change-dot" role="img" aria-label="Изменён после последнего подтверждения" title="Изменён после последнего подтверждения" />
                 </span>
                 <span>{{ formatDate(file.modifiedTime) }}</span><span>{{ formatDate(file.createdTime) }}</span>
-                <input type="checkbox" class="selection-checkbox" :aria-label="`Выбрать: ${file.name}`" v-if="deleteMode && file.status !== 'EMPTY'" :checked="selected.has(file.fileId)" @click.stop @change="toggle(file.fileId)" />
+                <m3e-checkbox
+                  v-if="deleteMode && file.status !== 'EMPTY'"
+                  :aria-label="`Выбрать: ${file.name}`"
+                  :checked.prop="selected.has(file.fileId)"
+                  @click.stop
+                  @change="setSelected(file.fileId, $event.currentTarget.checked)"
+                />
                 <m3e-button v-else-if="file.status === 'EMPTY'" variant="text" @click.stop="restore(file.fileId)">Восстановить</m3e-button>
                 <m3e-icon-button v-else aria-label="Скачать файл" @click.stop="downloadFile(file.fileId)"><m3e-icon name="download" /></m3e-icon-button>
               </div>

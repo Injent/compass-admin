@@ -229,9 +229,6 @@ private fun SheetValidatorScope.validateTimeCellsForDay(
             if (!value.isTimeRange()) {
                 error("Время должно быть в формате ЧЧ.ММ-ЧЧ.ММ")
             }
-            if (colIdx == SECOND_TIME_COL_IDX && !isRedText) {
-                error("В столбце C текст времени должен быть красным")
-            }
             if (rowIdx < dayCell.rowIdx || endRowIdx > dayCell.endRowIdx) {
                 error("Ячейка времени должна находиться в границах объединенной ячейки дня недели")
             }

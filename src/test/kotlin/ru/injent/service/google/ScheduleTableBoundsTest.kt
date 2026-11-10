@@ -157,6 +157,7 @@ class ScheduleTableBoundsTest {
         val comments = scope.getAccumulatedErrors().map(CellError::comment)
 
         assertEquals(9, scope.lastScheduleRowIdx)
+        assertEquals(emptyList(), scope.getAccumulatedErrors().filter { it.colIdx == 2 && it.rowIdx in 8..9 })
         assertFalse("В границах дня недели должны быть ячейки времени" in comments)
         assertFalse("Между ячейками времени не должно быть пустых ячеек" in comments)
         assertFalse("После последнего дня недели не должно быть данных вне его объединенной ячейки" in comments)

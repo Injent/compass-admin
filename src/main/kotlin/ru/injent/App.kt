@@ -29,6 +29,7 @@ import org.koin.dsl.module
 import org.koin.ktor.ext.get
 import org.koin.ktor.plugin.Koin
 import ru.injent.database.databaseModule
+import ru.injent.infrastructure.firebase.FirebasePushNotificationSender
 import ru.injent.service.auth.AuthService
 import ru.injent.service.config.AppConfig
 import ru.injent.service.config.RemoteConfigService
@@ -145,6 +146,8 @@ fun Application.configureApp() {
     val teacherService = get<TeacherService>()
     val remoteConfigService = get<RemoteConfigService>()
     val sheetValidators = listOf(get<LegendValidator>(), get<LessonValidator>(), get<TeacherValidator>())
+    val notificationSender = FirebasePushNotificationSender(File("google/firebase-secret.json"), log)
+    monitor.subscribe(ApplicationStopped) { notificationSender.close() }
 
     launch {
         while (true) {
@@ -163,6 +166,7 @@ fun Application.configureApp() {
         teachersPage(teacherService)
         configPage(remoteConfigService)
         finSupportPage(get<FinSupportSettingsService>())
+        notificationRoutes(authService, notificationSender)
         editorPage(googleService)
         googleSheetsCallbackPage(googleService, sheetValidators, this@configureApp)
     }
